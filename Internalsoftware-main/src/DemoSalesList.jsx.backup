@@ -1,0 +1,366 @@
+import React, { useState, useEffect } from "react";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
+import notoSansGujarati from "./fonts/NotoSansGujarati-Regular.js";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import { 
+  where, 
+  writeBatch, 
+  collection, 
+  addDoc, 
+  Timestamp, 
+  doc, 
+  getDocs, 
+  updateDoc,
+  arrayUnion,
+  serverTimestamp, 
+  query, 
+  onSnapshot 
+} from "firebase/firestore";
+import { db } from "./firebase";
+import Navbar from "./Navbar";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import "./form.css";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+const packagingOptions = [
+  "1L JAR: ₹145",
+  "2L JAR: ₹275",
+  "5L PLASTIC JAR: ₹665",
+  "5L STEEL BARNI: ₹890",
+  "10 LTR JAR: ₹1,340",
+  "10 LTR STEEL BARNI: ₹1,770",
+  "20 LTR CARBO: ₹2,550",
+  "20 LTR CANL : ₹3,250",
+  "20 LTR STEEL BARNI: ₹3,520",
+];
+
+const initialDemoInfo = {
+  date: "",
+  village: "",
+  taluka: "",
+  mantri: "",
+  totalMilk: "",
+  activeSabhasad: "",
+  latitude: "",
+  longitude: "",
+  entryBy: "",
+  teamMembers: "",
+  demoRemarks: "",
+};
+
+const initialCustomer = {
+  name: "",
+  code: "",
+  mobile: "",
+  remarks: "",
+  orderPackaging: "",
+  orderQty: "",
+};
+
+function DemoSalesList() {
+  // State declarations
+  const [demoInfo, setDemoInfo] = useState(initialDemoInfo);
+  const [customers, setCustomers] = useState([]);
+  const [customerInput, setCustomerInput] = useState(initialCustomer);
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [villageOptions, setVillageOptions] = useState([]);
+  const [selectedVillageId, setSelectedVillageId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Effect for village options
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "villages"), (snapshot) => {
+      const options = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
+      setVillageOptions(options);
+      if (demoInfo.village) {
+        const found = options.find(v => v.name === demoInfo.village);
+        if (found) setSelectedVillageId(found.id);
+      }
+    });
+    return () => unsub();
+  }, [demoInfo.village]);
+
+  const handleAddCustomer = async () => {
+    if (!customerInput.name || !customerInput.orderPackaging || !customerInput.orderQty) {
+      toast.error('Please fill in required fields (Name, Packaging, Quantity)');
+      return;
+    }
+
+    if (!selectedVillageId) {
+      toast.error('Please select a village first');
+      return;
+    }
+
+    try {
+      // Create new customer object
+      const newCustomer = {
+        ...customerInput,
+        addedManually: true,
+        addedBy: demoInfo.entryBy || 'Manual Entry',
+        addedAt: new Date().toISOString(),
+        villageId: selectedVillageId
+      };
+
+      // Add to customers collection first
+      const customersRef = collection(db, 'customers');
+      await addDoc(customersRef, newCustomer);
+
+      // Update local state immediately
+      setCustomers(prev => {
+        if (editingIdx !== null) {
+          return prev.map((c, idx) => idx === editingIdx ? newCustomer : c);
+        }
+        return [...prev, newCustomer];
+      });
+
+      // Also update demosales if needed
+      if (demoInfo.village) {
+        const demoRef = collection(db, 'demosales');
+        const demoQuery = query(
+          demoRef,
+          where('village', '==', demoInfo.village),
+          where('isAvailableForMembers', '==', true)
+        );
+
+        const demoSnapshot = await getDocs(demoQuery);
+        if (!demoSnapshot.empty) {
+          const demoDoc = demoSnapshot.docs[0];
+          await updateDoc(doc(db, 'demosales', demoDoc.id), {
+            customers: arrayUnion(newCustomer)
+          });
+        }
+      }
+
+      // Reset form
+      setCustomerInput(initialCustomer);
+      setEditingIdx(null);
+      
+      toast.success('Customer added successfully!');
+    } catch (error) {
+      console.error('Error adding customer:', error);
+      throw error;
+    }
+  };
+
+  const addCustomer = async (e) => {
+    if (e) e.preventDefault();
+    try {
+      await handleAddCustomer();
+    } catch (error) {
+      console.error('Error in addCustomer:', error);
+      toast.error('Failed to add customer. Please try again.');
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      if (!demoInfo.village) {
+        toast.error('Please select a village');
+        return;
+      }
+
+      const demoData = {
+        ...demoInfo,
+        customers,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'demosales'), demoData);
+      toast.success('Demo sales data saved successfully!');
+      
+      // Reset form
+      setDemoInfo(initialDemoInfo);
+      setCustomers([]);
+      
+    } catch (error) {
+      console.error('Error saving demo:', error);
+      toast.error('Failed to save demo data: ' + error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <Navbar />
+      <div className="container mt-4">
+        <h2>Demo Sales Entry</h2>
+        
+        {/* Demo Info Form */}
+        <form onSubmit={handleSubmit} className="mb-4">
+          <div className="row">
+            <div className="col-md-4 mb-3">
+              <label>Village:</label>
+              <select 
+                className="form-control"
+                value={demoInfo.village}
+                onChange={(e) => {
+                  const selected = villageOptions.find(v => v.name === e.target.value);
+                  setDemoInfo(prev => ({ ...prev, village: e.target.value }));
+                  if (selected) setSelectedVillageId(selected.id);
+                }}
+              >
+                <option value="">Select Village</option>
+                {villageOptions.map(village => (
+                  <option key={village.id} value={village.name}>{village.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="col-md-4 mb-3">
+              <label>Entry By:</label>
+              <input
+                type="text"
+                className="form-control"
+                value={demoInfo.entryBy}
+                onChange={(e) => setDemoInfo(prev => ({ ...prev, entryBy: e.target.value }))}
+              />
+            </div>
+          </div>
+        </form>
+
+        {/* Customer Entry Form */}
+        <div className="card mb-4">
+          <div className="card-header">
+            <h4>Add Customer</h4>
+          </div>
+          <div className="card-body">
+            <form onSubmit={addCustomer}>
+              <div className="row">
+                <div className="col-md-4 mb-3">
+                  <label>Name: <span className="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={customerInput.name}
+                    onChange={(e) => setCustomerInput(prev => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                </div>
+                
+                <div className="col-md-4 mb-3">
+                  <label>Mobile:</label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    value={customerInput.mobile}
+                    onChange={(e) => setCustomerInput(prev => ({ ...prev, mobile: e.target.value }))}
+                  />
+                </div>
+
+                <div className="col-md-4 mb-3">
+                  <label>Packaging: <span className="text-danger">*</span></label>
+                  <select
+                    className="form-control"
+                    value={customerInput.orderPackaging}
+                    onChange={(e) => setCustomerInput(prev => ({ ...prev, orderPackaging: e.target.value }))}
+                    required
+                  >
+                    <option value="">Select Packaging</option>
+                    {packagingOptions.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-md-4 mb-3">
+                  <label>Quantity: <span className="text-danger">*</span></label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={customerInput.orderQty}
+                    onChange={(e) => setCustomerInput(prev => ({ ...prev, orderQty: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-12 mb-3">
+                  <label>Remarks:</label>
+                  <textarea
+                    className="form-control"
+                    value={customerInput.remarks}
+                    onChange={(e) => setCustomerInput(prev => ({ ...prev, remarks: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-primary"
+                disabled={submitting}
+              >
+                {editingIdx !== null ? 'Update Customer' : 'Add Customer'}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Customers List */}
+        <div className="card">
+          <div className="card-header">
+            <h4>Customer List</h4>
+          </div>
+          <div className="card-body">
+            <div className="table-responsive">
+              <table className="table table-striped">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Mobile</th>
+                    <th>Packaging</th>
+                    <th>Quantity</th>
+                    <th>Remarks</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((customer, idx) => (
+                    <tr key={idx}>
+                      <td>{customer.name}</td>
+                      <td>{customer.mobile}</td>
+                      <td>{customer.orderPackaging}</td>
+                      <td>{customer.orderQty}</td>
+                      <td>{customer.remarks}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-warning me-2"
+                          onClick={() => {
+                            setCustomerInput(customer);
+                            setEditingIdx(idx);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => {
+                            const newCustomers = [...customers];
+                            newCustomers.splice(idx, 1);
+                            setCustomers(newCustomers);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default DemoSalesList;
