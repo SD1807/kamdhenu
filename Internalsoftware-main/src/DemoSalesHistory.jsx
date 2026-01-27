@@ -32,13 +32,19 @@ export default function DemoSalesHistory() {
   const setDownloading = (id, val) => setDownloadingMap(prev => ({...prev, [id]: val}));
   const setDownloadError = (id, val) => setDownloadErrorMap(prev => ({...prev, [id]: val}));
 
+  // Helper function to get demo display name with date
+  const getDemoName = (record) => {
+    return record.demoName || record.village || "Unknown Demo";
+  };
+
   // Filtering logic must be after records is declared
   const filteredRecords = React.useMemo(() => {
     return records.filter(r => {
       const sales = (r.customers||[]).reduce((sum, c) => sum + (Number(c.orderQty) || 0), 0).toString();
       const stock = (r.stockAtDairy||[]).reduce((sum, s) => sum + (Number(s.quantity) || 0), 0).toString();
+      const demoName = getDemoName(r);
       return (
-        (!villageFilter || (r.village||"").toLowerCase().includes(villageFilter.toLowerCase())) &&
+        (!villageFilter || demoName.toLowerCase().includes(villageFilter.toLowerCase())) &&
         (!dateFilter || (r.date||"").toLowerCase().includes(dateFilter.toLowerCase())) &&
         (!salesFilter || sales.includes(salesFilter)) &&
         (!stockFilter || stock.includes(stockFilter))
@@ -190,7 +196,7 @@ export default function DemoSalesHistory() {
                         }
                       });
                       const netSale = totalSales + totalStock;
-                      let waSummary = `*${r.date}*\n*${r.village}*\nMilk Collection: ${r.totalMilk || '-'}\nSabhasad Active: ${r.activeSabhasad || '-'}\nTeam: ${r.teamMembers || '-'}\n\n*Total Sales: ${totalSales}*\n`;
+                      let waSummary = `*${getDemoName(r)}*\nDate: ${r.date || '-'}\nMilk Collection: ${r.totalMilk || '-'}\nSabhasad Active: ${r.activeSabhasad || '-'}\nTeam: ${r.teamMembers || '-'}\n\n*Total Sales: ${totalSales}*\n`;
                       waSummary += `Package-wise Sales:`;
                       Object.entries(packagingSales).forEach(([pack, qty]) => {
                         waSummary += `\n${pack}: ${qty}`;
@@ -219,6 +225,7 @@ export default function DemoSalesHistory() {
     let row = 1;
 
     // Header info
+    sheet.addRow(["Demo Name", safe(getDemoName(r))]); row++;
     sheet.addRow(["Date", safe(r.date)]); row++;
     sheet.addRow(["Village", safe(r.village)]); row++;
     sheet.addRow(["Taluka", safe(r.taluka)]); row++;
@@ -299,6 +306,7 @@ const handleDownloadPDF = (r) => {
     y += 10;
 
     doc.setFontSize(11);
+    doc.text(`Demo: ${getDemoName(r)}`, 14, y); y += 7;
     doc.text(`Date: ${r.date || "-"}`, 14, y); y += 7;
     doc.text(`Village: ${r.village || "-"}`, 14, y); y += 7;
     doc.text(`Taluka: ${r.taluka || "-"}`, 14, y); y += 7;
@@ -353,7 +361,7 @@ const handleDownloadPDF = (r) => {
 
                       return (
                         <tr key={r.id}>
-                          <td>{r.village}</td>
+                          <td>{getDemoName(r)}</td>
                           <td>{r.date}</td>
                           <td>{(r.customers||[]).reduce((sum, c) => sum + (Number(c.orderQty) || 0), 0)}</td>
                           <td>{(r.stockAtDairy||[]).reduce((sum, s) => sum + (Number(s.quantity) || 0), 0)}</td>
@@ -420,6 +428,7 @@ const handleDownloadPDF = (r) => {
               <h3 style={{marginTop:0, color:'#174ea6', fontWeight:800, fontSize:'1.3em', letterSpacing:'0.02em', textAlign:'center'}}>Demo Sales Details</h3>
               <table style={{width:'100%', borderCollapse:'collapse', margin:'10px 0 0 0'}}>
                 <tbody>
+                  <tr><td style={{fontWeight:600, color:'#2563eb'}}>Demo Name</td><td>{getDemoName(selected)}</td></tr>
                   <tr><td style={{fontWeight:600, color:'#2563eb'}}>Date</td><td>{selected.date}</td></tr>
                   <tr><td style={{fontWeight:600, color:'#2563eb'}}>Village</td><td>{selected.village}</td></tr>
                   <tr><td style={{fontWeight:600, color:'#2563eb'}}>Taluka</td><td>{selected.taluka}</td></tr>

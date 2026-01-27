@@ -1,12 +1,12 @@
-
 import React, { useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import notoSansGujarati from "./fonts/NotoSansGujarati-Regular.js";
 import { saveAs } from "file-saver";
-import { where, writeBatch, collection, addDoc, Timestamp, doc, getDocs ,  serverTimestamp, query, onSnapshot, getDoc } from "firebase/firestore";
-import { db, storage } from "./firebase";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { where, writeBatch, collection, addDoc, Timestamp, doc, getDocs ,  serverTimestamp, query, onSnapshot, getDoc, setDoc } from "firebase/firestore";
+import { db } from "./firebase";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+const storage = getStorage();
 import Navbar from "./Navbar";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import "./form.css";
@@ -58,7 +58,28 @@ const initialStock = {
   quantity: "",
 };
 
+// New: For returned stock
+const initialReturnedStock = {
+  packaging: "",
+  quantity: "",
+};
+
+// New: For payment collection
+const initialPaymentEntry = {
+  amount: "",
+  mode: "",
+  givenBy: "",
+  takenBy: "",
+};
+
 const DemoSalesList = () => {
+  // New: Stock returned from demo
+  const [stockReturned, setStockReturned] = useState([]);
+  const [returnedStockInput, setReturnedStockInput] = useState(initialReturnedStock);
+  
+  // New: Payment collection
+  const [paymentsCollected, setPaymentsCollected] = useState([]);
+  const [paymentInput, setPaymentInput] = useState(initialPaymentEntry);
   
   // State for new village input
   const [newVillageName, setNewVillageName] = useState("");
@@ -66,6 +87,73 @@ const DemoSalesList = () => {
   const [demoInfo, setDemoInfo] = useState(initialDemoInfo);
   const [customers, setCustomers] = useState([]);
   const [customerInput, setCustomerInput] = useState(initialCustomer);
+  
+  // Handler for returned stock input
+  const handleReturnedStockInput = (e) => {
+    const { name, value } = e.target;
+    setReturnedStockInput((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Add returned stock
+  const addReturnedStock = (e) => {
+    e.preventDefault();
+    if (!returnedStockInput.packaging) {
+      toast.error('Please select packaging');
+      return;
+    }
+    const qty = parseFloat(returnedStockInput.quantity) || 0;
+    if (qty <= 0) {
+      toast.error('Quantity must be greater than zero');
+      return;
+    }
+    setStockReturned((prev) => [...prev, { packaging: returnedStockInput.packaging, quantity: String(qty) }]);
+    setReturnedStockInput(initialReturnedStock);
+  };
+
+  // Remove returned stock
+  const removeReturnedStock = (idx) => {
+    setStockReturned((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Handler for payment input
+  const handlePaymentInput = (e) => {
+    const { name, value } = e.target;
+    setPaymentInput((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Add payment
+  const addPayment = (e) => {
+    e.preventDefault();
+    if (!paymentInput.amount) {
+      toast.error('Please enter amount');
+      return;
+    }
+    const amount = parseFloat(paymentInput.amount) || 0;
+    if (amount <= 0) {
+      toast.error('Amount must be greater than zero');
+      return;
+    }
+    if (!paymentInput.mode) {
+      toast.error('Please select payment mode');
+      return;
+    }
+    if (!paymentInput.givenBy) {
+      toast.error('Please enter who gave the payment');
+      return;
+    }
+    if (!paymentInput.takenBy) {
+      toast.error('Please enter who took the payment');
+      return;
+    }
+    setPaymentsCollected((prev) => [...prev, { amount: String(amount), mode: paymentInput.mode, givenBy: paymentInput.givenBy, takenBy: paymentInput.takenBy }]);
+    setPaymentInput(initialPaymentEntry);
+    toast.success('Payment added successfully');
+  };
+
+  // Remove payment
+  const removePayment = (idx) => {
+    setPaymentsCollected((prev) => prev.filter((_, i) => i !== idx));
+  };
   
   const [photoCapture, setPhotoCapture] = useState("environment");
 const [selectedVillage, setSelectedVillage] = useState("");
@@ -108,6 +196,32 @@ const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
   };
 
   fetchVillage();
+}, [selectedVillageId]);
+
+// Real-time listener for stock from Firebase
+useEffect(() => {
+  if (!selectedVillageId) {
+    setStockTaken([]);
+    return;
+  }
+
+  const unsub = onSnapshot(
+    doc(db, "villageStocks", selectedVillageId),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setStockTaken(Array.isArray(data.stocks) ? data.stocks : []);
+      } else {
+        setStockTaken([]);
+      }
+    },
+    (err) => {
+      console.error("Error loading stock:", err);
+      setStockTaken([]);
+    }
+  );
+
+  return () => unsub();
 }, [selectedVillageId]);
 
 
@@ -197,7 +311,10 @@ const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
   };
 
 
-  const [stock, setStock] = useState([]);
+  // stockTaken: items moved to demo (linked to village)
+  const [stockTaken, setStockTaken] = useState([]);
+  // stockAtDairy: inventory kept at dairy (separate)
+  const [stockAtDairy, setStockAtDairy] = useState([]);
   const [stockInput, setStockInput] = useState(initialStock);
 
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -258,8 +375,9 @@ const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
   // helper to get scheme details
   const getOnePlusOneByKey = (key) => onePlusOneSchemes.find((s) => s.key === key) || null;
   const [waCopied, setWACopied] = useState(false);
-  const [demos, setDemos] = useState([]);
   const [demoId, setDemoId] = useState(null);
+  const [soldSummary, setSoldSummary] = useState({});
+  const [remainingStockList, setRemainingStockList] = useState([]);
 
 async function startDemo() {
   const villageName =
@@ -275,7 +393,6 @@ async function startDemo() {
     village: villageName,
     customers: [],
     status: "active",
-    isAvailableForMembers: false,
     createdAt: new Date(),
   });
 
@@ -288,6 +405,122 @@ useEffect(() => {
   localStorage.setItem("demoInfo", JSON.stringify(demoInfo));
 }, [demoInfo]);
 
+
+  // Helper function to deduct stock from stockTaken (shared by customers and dairy)
+  const deductFromStock = (packLabel, qty) => {
+    // Map between different packaging naming conventions
+    const packagingMap = {
+      "1L Plastic": "1LTR JAR: ₹145",
+      "2L Plastic": "2LTR JAR: ₹275",
+      "5L Plastic": "5LTR PLASTIC JAR: ₹665",
+      "5L Steel": "5LTR STEEL બરણી: ₹890",
+      "10L Plastic": "10 LTR JAR: ₹1,340",
+      "10L Steel": "10 LTR STEEL બરણી: ₹1,770",
+      "20L Can": "20 LTR CANL : ₹3,250",
+      "20L Steel": "20 LTR STEEL બરણી: ₹3,520",
+    };
+    
+    setStockTaken((current) => {
+      const newTaken = [...current];
+      let remainToDeduct = qty;
+      
+      // Map the label if it's a scheme part (short name)
+      const mappedLabel = packagingMap[packLabel] || packLabel;
+      
+      // Try exact match first
+      let idx = newTaken.findIndex(s => s.packaging === mappedLabel);
+      
+      // Try with original label if mapped didn't work
+      if (idx < 0) {
+        idx = newTaken.findIndex(s => s.packaging === packLabel);
+      }
+      
+      // Try size match as fallback (extract 1L, 2L, 5L, 10L, 20L)
+      if (idx < 0) {
+        const extractSize = (s) => {
+          const match = (s || "").match(/(\d+)\s*L(?:TR)?/i);
+          return match ? match[1] + "L" : null;
+        };
+        
+        const targetSize = extractSize(mappedLabel) || extractSize(packLabel);
+        if (targetSize) {
+          idx = newTaken.findIndex(s => extractSize(s.packaging) === targetSize);
+        }
+      }
+
+      if (idx >= 0) {
+        const available = parseInt(newTaken[idx].quantity) || 0;
+        const used = Math.min(available, remainToDeduct);
+        newTaken[idx].quantity = String(available - used);
+        remainToDeduct -= used;
+        if ((parseInt(newTaken[idx].quantity) || 0) <= 0) newTaken.splice(idx, 1);
+      }
+      
+      return newTaken;
+    });
+  };
+
+  // Consolidated deduction for multiple parts (like 1+1 schemes) - single state update
+  const deductMultipleFromStock = (parts, qty) => {
+    const packagingMap = {
+      "1L Plastic": "1LTR JAR: ₹145",
+      "2L Plastic": "2LTR JAR: ₹275",
+      "5L Plastic": "5LTR PLASTIC JAR: ₹665",
+      "5L Steel": "5LTR STEEL બરણી: ₹890",
+      "10L Plastic": "10 LTR JAR: ₹1,340",
+      "10L Steel": "10 LTR STEEL બરણી: ₹1,770",
+      "20L Can": "20 LTR CANL : ₹3,250",
+      "20L Steel": "20 LTR STEEL બરણી: ₹3,520",
+    };
+
+    setStockTaken((current) => {
+      let newTaken = [...current];
+      
+      // Calculate all deductions needed (map each part to how much to deduct from which index)
+      const deductions = [];
+      
+      parts.forEach((packLabel) => {
+        const mappedLabel = packagingMap[packLabel] || packLabel;
+        
+        // Try exact match first
+        let idx = newTaken.findIndex(s => s.packaging === mappedLabel);
+
+        // Try with original label if mapped didn't work
+        if (idx < 0) {
+          idx = newTaken.findIndex(s => s.packaging === packLabel);
+        }
+
+        // Try size match as fallback
+        if (idx < 0) {
+          const extractSize = (s) => {
+            const match = (s || "").match(/(\d+)\s*L(?:TR)?/i);
+            return match ? match[1] + "L" : null;
+          };
+
+          const targetSize = extractSize(mappedLabel) || extractSize(packLabel);
+          if (targetSize) {
+            idx = newTaken.findIndex(s => extractSize(s.packaging) === targetSize);
+          }
+        }
+
+        if (idx >= 0) {
+          deductions.push({ idx, qty });
+        }
+      });
+      
+      // Apply all deductions in one pass
+      deductions.forEach(({ idx, qty: deductQty }) => {
+        const available = parseInt(newTaken[idx].quantity) || 0;
+        const used = Math.min(available, deductQty);
+        newTaken[idx].quantity = String(available - used);
+      });
+      
+      // Remove zero-quantity items
+      newTaken = newTaken.filter(s => (parseInt(s.quantity) || 0) > 0);
+
+      return newTaken;
+    });
+  };
 
   const addCustomer = async () => {
   if (!customerInput.name || !customerInput.mobile) {
@@ -409,15 +642,7 @@ useEffect(() => {
 
 
 
-async function addCustomerToSubcollection(demoId, c, userName){
-await addDoc(collection(db, "demosales", demoId, "customers"), {
-  ...newCustomer,
-  orderQty: String(newCustomer.orderQty || "0"),
-  addedBy: demoInfo.entryBy || "Leader",
-  addedAt: serverTimestamp(),
-});
-
-}
+// Removed: addCustomerToSubcollection is not used in current flow
   // Location
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
@@ -554,12 +779,61 @@ useEffect(() => {
 
   const addStock = (e) => {
     e.preventDefault();
-    setStock((prev) => [...prev, stockInput]);
+    // basic validation
+    if (!stockInput.packaging) {
+      toast.error('Please select packaging');
+      return;
+    }
+    const qty = parseFloat(stockInput.quantity) || 0;
+    if (qty <= 0) {
+      toast.error('Quantity must be greater than zero');
+      return;
+    }
+
+    // Add to stockTaken
+    const updatedStockTaken = [...stockTaken, { packaging: stockInput.packaging, quantity: String(qty) }];
+    setStockTaken(updatedStockTaken);
+    toast.success(`✅ Added ${qty} ${stockInput.packaging} to Stock Taken`);
+    
+    // Auto-save to Firebase
+    if (selectedVillageId) {
+      setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        stocks: updatedStockTaken,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch((err) => {
+        console.error('Failed to save stock:', err);
+      });
+    }
+    
     setStockInput(initialStock);
   };
 
-  const removeStock = (idx) => {
-    setStock(stock.filter((_, i) => i !== idx));
+  const addStockAtDairy = (e) => {
+    e.preventDefault();
+    if (!stockInput.packaging) { toast.error('Please select packaging'); return; }
+    const qty = parseFloat(stockInput.quantity) || 0;
+    if (qty <= 0) { toast.error('Quantity must be greater than zero'); return; }
+    
+    const pkg = stockInput.packaging;
+    
+    // Add to stockAtDairy (NO deduction from Stock Taken - dairy is just where the stock is stored)
+    setStockAtDairy((prev) => [...prev, { packaging: pkg, quantity: String(qty) }]);
+    toast.success(`✅ Noted ${qty} ${pkg} stored at Dairy`);
+    setStockInput(initialStock);
+  };
+
+  const removeStockTaken = (idx) => {
+    setStockTaken((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const removeStockAtDairy = (idx) => {
+    console.log("🗑️ Removing stock at dairy at index:", idx);
+    setStockAtDairy((prev) => {
+      const updated = prev.filter((_, i) => i !== idx);
+      console.log("📦 Updated stockAtDairy:", updated);
+      return updated;
+    });
   };
 
   
@@ -567,15 +841,41 @@ useEffect(() => {
 
   const handleQuantityChange = (e, index) => {
     const newQuantity = parseFloat(e.target.value) || 0;
-    const updated = [...stock];
+    const updated = [...stockTaken];
     updated[index].quantity = newQuantity;
-    setStock(updated);
+    setStockTaken(updated);
   };
+
+  const handleQuantityChangeAtDairy = (e, index) => {
+    const newQuantity = e.target.value;
+    const updated = [...stockAtDairy];
+    updated[index].quantity = String(newQuantity || 0);
+    setStockAtDairy(updated);
+  };
+
+// Persist stock for the currently selected village
+const saveStockToVillage = async () => {
+  if (!selectedVillageId) {
+    toast.error('Please select a village first to save stock');
+    return;
+  }
+  try {
+    await setDoc(doc(db, 'villageStocks', selectedVillageId), {
+      stocks: stockTaken,
+      villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    
+    toast.success('✅ Stock saved successfully');
+  } catch (err) {
+    console.error('Failed to save stock:', err);
+    toast.error('Failed to save stock: ' + (err.message || err));
+  }
+};
 
 
 
 const handleEditCustomer = (customer) => {
-  console.log("EDIT CLICKED →", customer);
   
   setCustomerInput({
     name: customer.name || "",
@@ -643,14 +943,18 @@ const handleSelectExcelCustomer = (customer) => {
       await addDoc(collection(db, "demoForms"), {
         ...demoInfo,
         customers,
-        stockAtDairy: stock,
+        stockTaken,
+        stockAtDairy,
+        stockReturned,
         createdAt: Timestamp.now(),
       });
 
       await addDoc(collection(db, "demoHistory"), {
         ...demoInfo,
         customers,
-        stockAtDairy: stock,
+        stockTaken,
+        stockAtDairy,
+        stockReturned,
         savedAt: Timestamp.now(),
       });
 
@@ -658,7 +962,9 @@ const handleSelectExcelCustomer = (customer) => {
       setDemoInfo(initialDemoInfo);
       setCustomers([]);
       setCustomerInput(initialCustomer);
-      setStock([]);
+      setStockTaken([]);
+      setStockAtDairy([]);
+      setStockReturned([]);
       setStockInput(initialStock);
       //setEditingIdx(null);
     } catch (err) {
@@ -815,15 +1121,31 @@ const handleSelectExcelCustomer = (customer) => {
       y = doc.lastAutoTable.finalY + 6;
     }
 
-  // Allow PDF export even if no stock
-  if (stock.length > 0) {
+  // Include Stock Taken (for Demo) if present
+  if (stockTaken.length > 0) {
+      doc.setFontSize(13);
+      doc.text("Stock Taken (for Demo)", 14, y);
+      y += 4;
+      doc.autoTable({
+        startY: y,
+        head: [["Packaging", "Quantity"]],
+        body: stockTaken.map((s) => [s.packaging, s.quantity]),
+        theme: "grid",
+        styles: { fontSize: 10 },
+        margin: { left: 14, right: 14 },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+    }
+
+  // Include Stock at Dairy
+  if (stockAtDairy.length > 0) {
       doc.setFontSize(13);
       doc.text("Stock at Dairy", 14, y);
       y += 4;
       doc.autoTable({
         startY: y,
         head: [["Packaging", "Quantity"]],
-        body: stock.map((s) => [s.packaging, s.quantity]),
+        body: stockAtDairy.map((s) => [s.packaging, s.quantity]),
         theme: "grid",
         styles: { fontSize: 10 },
         margin: { left: 14, right: 14 },
@@ -861,6 +1183,70 @@ const handleSelectExcelCustomer = (customer) => {
     setRandomWinners({ small: winner1, large: winner2 });
   };
 
+  // Helper function to calculate remaining stock
+  const calculateSoldAndRemaining = () => {
+    const sold = {};
+
+    customers.forEach((c) => {
+      const qty = parseInt(c.orderQty) || 0;
+      if (!qty) return;
+
+      if (c.schemeKey) {
+        const scheme = getOnePlusOneByKey(c.schemeKey);
+        if (scheme && Array.isArray(scheme.parts)) {
+          scheme.parts.forEach((part) => {
+            const match = packagingOptions.find((opt) =>
+              opt.toLowerCase().includes(part.toLowerCase())
+            );
+            const key = match || part;
+            sold[key] = (sold[key] || 0) + qty;
+          });
+        } else {
+          const key = c.orderPackaging || "Unknown";
+          sold[key] = (sold[key] || 0) + qty;
+        }
+      } else {
+        const match = packagingOptions.find((opt) => opt.startsWith(c.orderPackaging));
+        const key = match || c.orderPackaging || "Unknown";
+        sold[key] = (sold[key] || 0) + qty;
+      }
+    });
+
+    // Calculate dairy deductions
+    const dairy = {};
+    stockAtDairy.forEach((s) => {
+      const qty = parseInt(s.quantity) || 0;
+      dairy[s.packaging] = (dairy[s.packaging] || 0) + qty;
+    });
+
+    const allKeys = new Set([
+      ...Object.keys(sold),
+      ...stockTaken.map((s) => s.packaging),
+      ...stockReturned.map((s) => s.packaging),
+      ...packagingOptions,
+    ]);
+
+    const remainingList = Array.from(allKeys).map((k) => {
+      const stockItem = stockTaken.find((s) => s.packaging === k) || { quantity: 0 };
+      const returnedItem = stockReturned.find((s) => s.packaging === k) || { quantity: 0 };
+      const stockQty = parseInt(stockItem.quantity) || 0;
+      const soldQty = parseInt(sold[k] || 0) || 0;
+      const dairyQty = parseInt(dairy[k] || 0) || 0;
+      const returnedQty = parseInt(returnedItem.quantity) || 0;
+      // Remaining = Stock Taken - Sold - Kept at Dairy + Returned
+      return { packaging: k, stock: stockQty, sold: soldQty, dairy: dairyQty, returned: returnedQty, remaining: stockQty - soldQty - dairyQty + returnedQty };
+    });
+
+    return { sold, dairy, remainingList };
+  };
+
+  // Realtime dashboard: compute sold and remaining stock per packaging
+  useEffect(() => {
+    const { sold, dairy, remainingList } = calculateSoldAndRemaining();
+    setSoldSummary(sold);
+    setRemainingStockList(remainingList);
+  }, [customers, stockTaken, stockAtDairy, stockReturned]);
+
   // WhatsApp summary
   const handleGenerateSummary = () => {
     // Prefer demoInfo.village (set by handleVillageSelect). 
@@ -881,11 +1267,19 @@ const villageName =
 
   // Group stock by packaging
   const stockSummary = {};
-  stock.forEach(s => {
+  stockTaken.forEach(s => {
     if (!s.packaging || !s.quantity) return;
     const qty = parseInt(s.quantity) || 0;
     if (!stockSummary[s.packaging]) stockSummary[s.packaging] = 0;
     stockSummary[s.packaging] += qty;
+  });
+
+  // Group payments by mode
+  const paymentSummary = {};
+  paymentsCollected.forEach(p => {
+    if (!p.mode) return;
+    if (!paymentSummary[p.mode]) paymentSummary[p.mode] = 0;
+    paymentSummary[p.mode] += parseFloat(p.amount) || 0;
   });
 
   // Convert to text lines
@@ -897,6 +1291,14 @@ const villageName =
     .map(([pkg, qty]) => `𝟭 ${pkg} - ${qty} 𝗻𝗼𝘀`)
     .join("\n");
 
+  // Payment lines
+  const paymentLines = Object.entries(paymentSummary)
+    .map(([mode, amount]) => `𝟭 ${mode} - ₹${amount.toFixed(2)}`)
+    .join("\n");
+
+  // Total payment collected
+  const totalPayment = paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0);
+
   // Grand total litres
   const grandTotalLitres =
     customers.reduce((acc, c) => {
@@ -907,7 +1309,7 @@ const villageName =
       const qty = parseInt(c.orderQty) || 0;
       return acc + litres * qty;
     }, 0) +
-    stock.reduce((acc, s) => {
+    stockTaken.reduce((acc, s) => {
       const match = packagingOptions.find(opt => opt.startsWith(s.packaging));
       if (!match) return acc;
       const litreMatch = match.match(/(\d+)/);
@@ -923,6 +1325,10 @@ ${salesLines || "—"}
 
 𝗦𝘁𝗼𝗰𝗸:- 
 ${stockLines || "—"}
+
+𝗣𝗮𝘆𝗺𝗲𝗻𝘁 𝗖𝗼𝗹𝗹𝗲𝗰𝘁𝗲𝗱:- 
+${paymentLines || "—"}
+𝗧𝗼𝘁𝗮𝗹 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 - ₹${totalPayment.toFixed(2)}
 
 𝗚𝗿𝗮𝗻𝗱 𝗧𝗼𝘁𝗮𝗹 - ${grandTotalLitres} 𝗟𝗶𝘁𝗿𝗲 
 
@@ -962,18 +1368,11 @@ ${stockLines || "—"}
   const filteredResults = customerData.filter((customer) =>
     Object.values(customer).join(" ").toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  async function addToMembers() {
-    await updateDoc(doc(db, "demosales", demoId), {
-      isAvailableForMembers: true,
-    });
-    alert("Now Members can see this village!");
-  }
   
   return (
     <>
       <Navbar />
-
+      <div style={{ backgroundColor: "#FFD700", padding: "12px", textAlign: "center", fontWeight: "bold", fontSize: "16px", color: "red" }}>🔥 STOCK FEATURE LOADED - v2.1</div>
       <div
         className="form-container"
         style={{
@@ -1176,6 +1575,222 @@ ${stockLines || "—"}
   Start Demo
   </button>
 
+        {/* ========== STOCK TAKEN TO VILLAGE SECTION ========== */}
+        <div
+          className="section-card"
+          style={{
+            marginTop: 24,
+            marginBottom: 24,
+            textAlign: "left",
+            borderRadius: 14,
+            boxShadow: "0 4px 24px #2563eb33",
+            background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+            padding: "0",
+            border: "3px solid #0284c7",
+            maxWidth: 900,
+            marginLeft: "auto",
+            marginRight: "auto",
+          }}
+        >
+          {/* Header with gradient */}
+          <div style={{ padding: "24px 24px 16px 24px", background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)", borderRadius: "11px 11px 0 0", color: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.5em", letterSpacing: "0.05em" }}>
+                📦 STOCK TAKEN TO VILLAGE
+              </h3>
+              {(() => {
+                const totalQty = stockTaken.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
+                return (
+                  <div style={{ background: "rgba(255,255,255,0.25)", padding: "10px 18px", borderRadius: 8, fontSize: "1em", fontWeight: 700 }}>
+                    <span style={{ fontSize: "1.4em" }}>{totalQty}</span>
+                    <div style={{ fontSize: "0.8em", opacity: 0.9 }}>Total Units</div>
+                  </div>
+                );
+              })()}
+            </div>
+            <p style={{ margin: 0, fontSize: "0.95em", opacity: 0.95 }}>Add packaging items and quantities that will be taken to the village for demonstration and sales</p>
+          </div>
+
+          {/* Input Form Section */}
+          <div style={{ padding: "18px 24px", background: "#fff", borderBottom: "2px solid #e0f2fe" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, alignItems: "flex-end" }}>
+              <div>
+                <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 6 }}>Select Packaging Type</label>
+                <select 
+                  value={stockInput.packaging} 
+                  onChange={(e) => setStockInput({ ...stockInput, packaging: e.target.value })} 
+                  style={{ 
+                    width: "100%", 
+                    padding: "10px 12px", 
+                    borderRadius: 6, 
+                    border: "2px solid #bfdbfe", 
+                    background: "#fff", 
+                    color: "#000",
+                    fontSize: "0.95em",
+                    fontWeight: 600
+                  }}
+                >
+                  <option value="">-- Select Packaging --</option>
+                  {packagingOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 6 }}>Quantity</label>
+                <input 
+                  type="number" 
+                  name="quantity" 
+                  value={stockInput.quantity} 
+                  onChange={handleStockInput} 
+                  min="1" 
+                  placeholder="Enter qty" 
+                  style={{ 
+                    width: "100%", 
+                    padding: "10px 12px", 
+                    borderRadius: 6, 
+                    border: "2px solid #bfdbfe", 
+                    background: "#fff",
+                    fontSize: "0.95em",
+                    fontWeight: 600
+                  }} 
+                />
+              </div>
+
+              <button 
+                type="button" 
+                onClick={addStock} 
+                style={{ 
+                  padding: "10px 28px", 
+                  background: "#10b981", 
+                  color: "#fff", 
+                  border: "none", 
+                  borderRadius: 8, 
+                  fontWeight: 700, 
+                  fontSize: "0.95em", 
+                  cursor: "pointer", 
+                  transition: "all 0.3s",
+                  boxShadow: "0 2px 8px #10b98144",
+                  width: "100%"
+                }} 
+                onMouseOver={(e) => {
+                  e.target.style.background = "#059669";
+                  e.target.style.transform = "translateY(-2px)";
+                  e.target.style.boxShadow = "0 4px 12px #10b98155";
+                }} 
+                onMouseOut={(e) => {
+                  e.target.style.background = "#10b981";
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "0 2px 8px #10b98144";
+                }}
+              >
+                ✓ ADD TO STOCK
+              </button>
+            </div>
+          </div>
+
+          {/* Stock Items Display */}
+          <div style={{ padding: "20px 24px" }}>
+            {stockTaken.length === 0 ? (
+              <div style={{ 
+                textAlign: "center", 
+                color: '#6b7280', 
+                padding: "40px 20px", 
+                fontSize: "1.05em",
+                background: "#f8fafc",
+                borderRadius: 8,
+                border: "2px dashed #cbd5e1"
+              }}>
+                <div style={{ fontSize: "3em", marginBottom: 8 }}>📭</div>
+                <div>No stock added yet. Add packaging and quantity above to get started.</div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14, marginBottom: 16 }}>
+                  {stockTaken.map((t, idx) => (
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        background: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)",
+                        padding: "16px", 
+                        borderRadius: 10, 
+                        border: "2px solid #06b6d4", 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: "center",
+                        boxShadow: "0 2px 8px #06b6d422"
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#0369a1", fontSize: "1.05em" }}>{t.packaging}</div>
+                        <div style={{ color: "#0891b2", fontSize: "0.95em", marginTop: 4, fontWeight: 700 }}>Qty: {t.quantity}</div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => removeStockTaken(idx)} 
+                        style={{ 
+                          padding: '8px 12px', 
+                          borderRadius: 6, 
+                          background: '#ef4444', 
+                          color: '#fff', 
+                          border: 'none', 
+                          cursor: 'pointer', 
+                          fontWeight: 700, 
+                          fontSize: "0.9em", 
+                          transition: "all 0.2s",
+                          boxShadow: "0 2px 4px #ef444444"
+                        }} 
+                        onMouseOver={(e) => {
+                          e.target.style.background = '#dc2626';
+                          e.target.style.transform = "scale(1.05)";
+                        }} 
+                        onMouseOut={(e) => {
+                          e.target.style.background = '#ef4444';
+                          e.target.style.transform = "scale(1)";
+                        }}
+                      >
+                        ✕ Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Save to Village Button */}
+                <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
+                  <button 
+                    type="button" 
+                    onClick={saveStockToVillage} 
+                    style={{ 
+                      flex: 1, 
+                      padding: "14px 20px", 
+                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", 
+                      color: "#fff", 
+                      border: "none", 
+                      borderRadius: 8, 
+                      fontWeight: 700, 
+                      fontSize: "1.05em",
+                      cursor: "pointer", 
+                      transition: "all 0.3s",
+                      boxShadow: "0 4px 12px #10b98144"
+                    }} 
+                    onMouseOver={(e) => {
+                      e.target.style.transform = "translateY(-2px)";
+                      e.target.style.boxShadow = "0 6px 16px #10b98155";
+                    }} 
+                    onMouseOut={(e) => {
+                      e.target.style.transform = "translateY(0)";
+                      e.target.style.boxShadow = "0 4px 12px #10b98144";
+                    }}
+                  >
+                    💾 SAVE STOCK FOR VILLAGE
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
     <div className="form-section">
             <label>Location</label>
             <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -1230,45 +1845,10 @@ ${stockLines || "—"}
 )}
             <div style={{ marginBottom: 20, textAlign: "center" }}>
               <input type="file" accept=".xlsx, .xls,.csv" onChange={handleExcelUpload} />
-              <button
-                type="button"
-                onClick={(event) => {
-                  const newInput = document.createElement("input");
-                  newInput.type = "file";
-                  newInput.accept = ".xlsx, .xls,.csv";
-                  newInput.style.marginLeft = "10px";
-                  newInput.onchange = handleExcelUpload;
-                  event.target.parentNode.insertBefore(newInput, event.target);
-                }}
-                style={{
-                  marginLeft: 10,
-                  padding: "6px 18px",
-                  fontWeight: 700,
-                  fontSize: "1em",
-                  borderRadius: 8,
-                  background: "#2563eb",
-                  color: "#fff",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                Add More Excel
-              </button>
+              <span style={{ marginLeft: 10, color: "#6b7280", fontSize: "0.9em" }}>
+                (Upload will add to existing customers)
+              </span>
             </div>
-{demos.map((d) => (
-  <div key={d.id} style={{border: "1px solid gray", margin: "10px", padding: "10px"}}>
-    <h3>{d.village}</h3>
-    <p>Status: {d.isAvailableForMembers ? "Available for Members" : "Not yet shared"}</p>
-    {!d.isAvailableForMembers && (
-      <button type="button" onClick={() => enableForMembers(d.id)}>Add to Members</button>
-    )}
-        <ul>
-            {customers.map((c, i) => (
-              <li key={i}>{c.name} - {c.mobile || c.phone} {c.addedBy && (<span style={{color:'#2563eb'}}>[Entry By: {c.addedBy}]</span>)}</li>
-            ))}
-          </ul>
-  </div>
-))}
 
             {/* Search & Select customer */}
            {/* Search Input */}
@@ -1277,7 +1857,6 @@ ${stockLines || "—"}
     type="text"
     value={searchTerm}
     onChange={(e) => setSearchTerm(e.target.value)}
-      disabled={!!editingCustomerId}
     placeholder="Search customer..."
     className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
   />
@@ -1612,9 +2191,11 @@ ${stockLines || "—"}
                           const match = packagingOptions.find((opt) =>
                             opt.startsWith(c.orderPackaging)
                           );
-                          const rate = match
-                            ? parseInt(match.split("₹")[1].replace(",", ""))
-                            : 0;
+                          let rate = 0;
+                          if (match) {
+                            const priceMatch = match.match(/₹\s*([\d,]+)/);
+                            rate = priceMatch ? parseInt(priceMatch[1].replace(/,/g, "")) : 0;
+                          }
                           const qty = parseInt(c.orderQty) || 0;
                           return acc + rate * qty;
                         }, 0)}
@@ -1679,14 +2260,14 @@ ${stockLines || "—"}
                     color: "#fff",
                     border: "none",
                   }}
-                  onClick={addStock}
+                  onClick={addStockAtDairy}
                 >
                   Add
                 </button>
               </div>
             </div>
 
-            {stock.length > 0 && (
+            {stockAtDairy.length > 0 && (
               <div style={{ marginTop: 18, overflowX: "auto" }}>
                 <table
                   style={{
@@ -1706,14 +2287,14 @@ ${stockLines || "—"}
                     </tr>
                   </thead>
                   <tbody>
-                    {stock.map((s, idx) => (
+                    {stockAtDairy.map((s, idx) => (
                       <tr key={idx} style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}>
                         <td>{s.packaging}</td>
                         <td>
                           <input
                             type="number"
-                            value={s.quantity}
-                            onChange={(e) => handleQuantityChange(e, idx)}
+                            value={parseInt(s.quantity) || 0}
+                            onChange={(e) => handleQuantityChangeAtDairy(e, idx)}
                             min="0"
                             style={{ width: 80 }}
                           />
@@ -1721,9 +2302,21 @@ ${stockLines || "—"}
                         <td>
                           <button
                             type="button"
-                            className="btn-outline"
-                            style={{ padding: "4px 12px", borderRadius: 6 }}
-                            onClick={() => removeStock(idx)}
+                            style={{ 
+                              padding: "4px 12px", 
+                              borderRadius: 6,
+                              background: "#ef4444",
+                              color: "#fff",
+                              border: "none",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontSize: "0.9em"
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              removeStockAtDairy(idx);
+                            }}
                           >
                             Remove
                           </button>
@@ -1736,7 +2329,7 @@ ${stockLines || "—"}
                 <p>
                   <strong>
                     Grand Total Stock Value: ₹
-                    {stock.reduce((acc, s) => {
+                    {stockAtDairy.reduce((acc, s) => {
                       if (!s.packaging) return acc;
                       const match = packagingOptions.find((opt) => opt.startsWith(s.packaging));
                       if (!match) return acc;
@@ -1751,86 +2344,700 @@ ${stockLines || "—"}
             )}
           </div>
 
+          {/* Realtime Stock Dashboard + Returned Stock */}
+          <div
+            className="section-card"
+            style={{
+              marginBottom: 12,
+              textAlign: "left",
+              borderRadius: 14,
+              boxShadow: "0 2px 12px #2563eb11",
+              background: "#fff",
+              padding: "14px 18px",
+            }}
+          >
+            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "1.05rem" }}>Realtime Stock Dashboard</h3>
+            <p style={{ marginTop: 8, color: "#6b7280" }}>Shows sold, returned, and remaining stock (derived from customers and village stock).</p>
+            <div style={{ overflowX: "auto", marginTop: 8 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid #e6eefc" }}>
+                    <th style={{ padding: "6px 8px" }}>Packaging</th>
+                    <th style={{ padding: "6px 8px" }}>Stock Taken</th>
+                    <th style={{ padding: "6px 8px" }}>Sold to Customers</th>
+                    <th style={{ padding: "6px 8px" }}>Kept at Dairy</th>
+                    <th style={{ padding: "6px 8px" }}>Returned</th>
+                    <th style={{ padding: "6px 8px" }}>Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {remainingStockList.map((r, idx) => (
+                    <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#fbfdff" }}>
+                      <td style={{ padding: "6px 8px" }}>{r.packaging}</td>
+                      <td style={{ padding: "6px 8px" }}>{r.stock}</td>
+                      <td style={{ padding: "6px 8px" }}>{r.sold}</td>
+                      <td style={{ padding: "6px 8px" }}>{r.dairy}</td>
+                      <td style={{ padding: "6px 8px" }}>{r.returned}</td>
+                      <td style={{ padding: "6px 8px", color: r.remaining < 0 ? "#b91c1c" : "#174ea6", fontWeight: 700 }}>{r.remaining}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Returned Stock Input Section */}
+            <div style={{ marginTop: 18, background: '#f7fafd', borderRadius: 8, padding: 12 }}>
+              <h4 style={{ margin: 0, color: '#174ea6', fontWeight: 700, fontSize: '1em' }}>Add Returned Stock</h4>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+                <select name="packaging" value={returnedStockInput.packaging} onChange={handleReturnedStockInput} style={{ padding: '8px', borderRadius: 6, minWidth: 150 }}>
+                  <option value="">Select Packaging</option>
+                  {packagingOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                <input type="number" name="quantity" value={returnedStockInput.quantity} onChange={handleReturnedStockInput} min="1" placeholder="Qty" style={{ width: 100, padding: '8px', borderRadius: 6 }} />
+                <button type="button" onClick={addReturnedStock} style={{ padding: '8px 16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '1em', cursor: 'pointer' }}>Add Returned</button>
+              </div>
+              {/* List of returned stock */}
+              {stockReturned.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <b>Returned Stock List:</b>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                    {stockReturned.map((s, idx) => (
+                      <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span>{s.packaging} - Qty: {s.quantity}</span>
+                        <button type="button" onClick={() => removeReturnedStock(idx)} style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: '0.9em', cursor: 'pointer' }}>Remove</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Payment Collection Section */}
+          <div
+            className="section-card"
+            style={{
+              marginBottom: 24,
+              textAlign: "left",
+              borderRadius: 14,
+              boxShadow: "0 2px 12px #2563eb11",
+              background: "#fff",
+              padding: "24px 18px",
+            }}
+          >
+            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "1.15rem", marginBottom: 16 }}>
+              💳 Payment Collected
+            </h3>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "end", marginBottom: 14 }}>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <label>Amount*</label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={paymentInput.amount}
+                  onChange={handlePaymentInput}
+                  placeholder="Enter amount"
+                  min="1"
+                  step="0.01"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <label>Payment Mode*</label>
+                <select
+                  name="mode"
+                  value={paymentInput.mode}
+                  onChange={handlePaymentInput}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">Select Mode</option>
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Card">Card</option>
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <label>Given By*</label>
+                <input
+                  type="text"
+                  name="givenBy"
+                  value={paymentInput.givenBy}
+                  onChange={handlePaymentInput}
+                  placeholder="Customer name"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <label>Taken By*</label>
+                <input
+                  type="text"
+                  name="takenBy"
+                  value={paymentInput.takenBy}
+                  onChange={handlePaymentInput}
+                  placeholder="Your name"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  style={{
+                    padding: "8px 18px",
+                    fontWeight: 700,
+                    fontSize: "1em",
+                    borderRadius: 8,
+                    background: "#2563eb",
+                    color: "#fff",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                  onClick={addPayment}
+                >
+                  Add Payment
+                </button>
+              </div>
+            </div>
+
+            {paymentsCollected.length > 0 && (
+              <div style={{ marginTop: 18, overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    textAlign: "center",
+                    background: "#fff",
+                    borderRadius: 8,
+                    boxShadow: "0 1px 6px #2563eb11",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#f7fafd", fontWeight: 700, color: "#174ea6" }}>
+                      <th>Amount (₹)</th>
+                      <th>Mode</th>
+                      <th>Given By</th>
+                      <th>Taken By</th>
+                      <th>Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentsCollected.map((p, idx) => (
+                      <tr key={idx} style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}>
+                        <td>
+                          <strong>₹{parseFloat(p.amount).toFixed(2)}</strong>
+                        </td>
+                        <td>{p.mode}</td>
+                        <td>{p.givenBy}</td>
+                        <td>{p.takenBy}</td>
+                        <td>
+                          <button
+                            type="button"
+                            style={{
+                              padding: "4px 12px",
+                              borderRadius: 6,
+                              background: "#ef4444",
+                              color: "#fff",
+                              border: "none",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontSize: "0.9em",
+                            }}
+                            onClick={() => removePayment(idx)}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: "#f0f9ff", fontWeight: "bold" }}>
+                      <td colSpan="5" style={{ textAlign: "right", padding: "12px 8px" }}>
+                        Total Payment Collected: ₹
+                        {paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           <button type="button" onClick={pickRandomCustomer}>
             Pick Random Winners
           </button>
           {randomWinners.small && <p>🎉 1L/2L Winner: {randomWinners.small.name}</p>}
           {randomWinners.large && <p>🥳 5L/10L/20L Winner: {randomWinners.large.name}</p>}
 
-          {/* Actions */}
+          {/* Stock Summary Dashboard - POSITIONED BEFORE EXPORT */}
+          <div
+            className="section-card"
+            style={{
+              marginTop: 32,
+              marginBottom: 28,
+              textAlign: "center",
+              borderRadius: 16,
+              boxShadow: "0 6px 32px #2563eb22",
+              background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+              padding: "32px 24px",
+              border: "3px solid #0284c7",
+              maxWidth: 1000,
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          >
+            <div style={{ marginBottom: 28 }}>
+              <h3 style={{ 
+                margin: "0 0 8px 0", 
+                color: "#0369a1", 
+                fontWeight: 900, 
+                fontSize: "2rem",
+                letterSpacing: "0.05em"
+              }}>
+                📊 STOCK INVENTORY DASHBOARD
+              </h3>
+              <p style={{ 
+                margin: "8px 0 0 0", 
+                color: "#0891b2", 
+                fontWeight: 600, 
+                fontSize: "1em"
+              }}>
+                Real-time inventory tracking: Taken vs Sold vs Stored vs Remaining
+              </p>
+            </div>
+
+            {/* Cards Grid */}
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", 
+              gap: 20, 
+              maxWidth: 1100, 
+              marginLeft: "auto", 
+              marginRight: "auto",
+              marginBottom: 24
+            }}>
+              {/* Stock Taken Card */}
+              <div style={{ 
+                padding: "24px 20px", 
+                backgroundColor: "linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)", 
+                borderRadius: "14px", 
+                border: "3px solid #0284c7", 
+                textAlign: "center", 
+                boxShadow: "0 4px 12px #0284c722",
+                transition: "all 0.3s",
+                cursor: "default"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px #0284c733";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 12px #0284c722";
+              }}>
+                <h4 style={{ margin: "0 0 12px 0", color: "#0369a1", fontSize: "1.25rem", fontWeight: 800 }}>
+                  📦 Stock Taken
+                </h4>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: "3.2rem", 
+                  fontWeight: 900, 
+                  color: "#0284c7",
+                  letterSpacing: "0.05em"
+                }}>
+                  {(() => {
+                    const total = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    return total;
+                  })()}
+                </p>
+                <p style={{ 
+                  margin: "8px 0 0 0", 
+                  fontSize: "0.95rem", 
+                  color: "#0891b2", 
+                  fontWeight: 700 
+                }}>
+                  units to village
+                </p>
+              </div>
+
+              {/* Stock Sold Card */}
+              <div style={{ 
+                padding: "24px 20px", 
+                backgroundColor: "linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%)",
+                borderRadius: "14px", 
+                border: "3px solid #a855f7", 
+                textAlign: "center", 
+                boxShadow: "0 4px 12px #a855f722",
+                transition: "all 0.3s",
+                cursor: "default"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px #a855f733";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 12px #a855f722";
+              }}>
+                <h4 style={{ margin: "0 0 12px 0", color: "#7e22ce", fontSize: "1.25rem", fontWeight: 800 }}>
+                  💰 Stock Sold
+                </h4>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: "3.2rem", 
+                  fontWeight: 900, 
+                  color: "#a855f7",
+                  letterSpacing: "0.05em"
+                }}>
+                  {(() => {
+                    const total = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    return total;
+                  })()}
+                </p>
+                <p style={{ 
+                  margin: "8px 0 0 0", 
+                  fontSize: "0.95rem", 
+                  color: "#d946ef", 
+                  fontWeight: 700 
+                }}>
+                  to customers
+                </p>
+              </div>
+
+              {/* Stock at Dairy Card */}
+              <div style={{ 
+                padding: "24px 20px", 
+                backgroundColor: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+                borderRadius: "14px", 
+                border: "3px solid #f59e0b", 
+                textAlign: "center", 
+                boxShadow: "0 4px 12px #f59e0b22",
+                transition: "all 0.3s",
+                cursor: "default"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px #f59e0b33";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 12px #f59e0b22";
+              }}>
+                <h4 style={{ margin: "0 0 12px 0", color: "#d97706", fontSize: "1.25rem", fontWeight: 800 }}>
+                  🏪 At Dairy
+                </h4>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: "3.2rem", 
+                  fontWeight: 900, 
+                  color: "#f59e0b",
+                  letterSpacing: "0.05em"
+                }}>
+                  {(() => {
+                    const total = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    return total;
+                  })()}
+                </p>
+                <p style={{ 
+                  margin: "8px 0 0 0", 
+                  fontSize: "0.95rem", 
+                  color: "#b45309", 
+                  fontWeight: 700 
+                }}>
+                  kept for storage
+                </p>
+              </div>
+
+              {/* Stock Remaining Card */}
+              <div style={{ 
+                padding: "24px 20px", 
+                backgroundColor: (() => {
+                  const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                  const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const remaining = taken - sold - dairy;
+                  return remaining >= 0 ? "linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)" : "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)";
+                })(),
+                borderRadius: "14px", 
+                border: (() => {
+                  const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                  const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const remaining = taken - sold - dairy;
+                  return remaining >= 0 ? "3px solid #22c55e" : "3px solid #ef4444";
+                })(),
+                textAlign: "center", 
+                boxShadow: (() => {
+                  const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                  const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const remaining = taken - sold - dairy;
+                  return remaining >= 0 ? "0 4px 12px #22c55e22" : "0 4px 12px #ef444422";
+                })(),
+                transition: "all 0.3s",
+                cursor: "default"
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = (() => {
+                  const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                  const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const remaining = taken - sold - dairy;
+                  return remaining >= 0 ? "0 8px 20px #22c55e33" : "0 8px 20px #ef444433";
+                })();
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = (() => {
+                  const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                  const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                  const remaining = taken - sold - dairy;
+                  return remaining >= 0 ? "0 4px 12px #22c55e22" : "0 4px 12px #ef444422";
+                })();
+              }}>
+                <h4 style={{ 
+                  margin: "0 0 12px 0", 
+                  color: (() => {
+                    const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const remaining = taken - sold - dairy;
+                    return remaining >= 0 ? "#16a34a" : "#dc2626";
+                  })(),
+                  fontSize: "1.25rem", 
+                  fontWeight: 800 
+                }}>
+                  ✅ Remaining
+                </h4>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: "3.2rem", 
+                  fontWeight: 900, 
+                  color: (() => {
+                    const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const remaining = taken - sold - dairy;
+                    return remaining >= 0 ? "#22c55e" : "#ef4444";
+                  })(),
+                  letterSpacing: "0.05em"
+                }}>
+                  {(() => {
+                    const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    return taken - sold - dairy;
+                  })()}
+                </p>
+                <p style={{ 
+                  margin: "8px 0 0 0", 
+                  fontSize: "0.95rem", 
+                  color: (() => {
+                    const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const remaining = taken - sold - dairy;
+                    return remaining < 0 ? "#dc2626" : "#16a34a";
+                  })(),
+                  fontWeight: 700 
+                }}>
+                  {(() => {
+                    const taken = stockTaken.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const sold = customers.reduce((sum, c) => sum + (parseInt(c.orderQty) || 0), 0);
+                    const dairy = stockAtDairy.reduce((sum, s) => sum + (parseInt(s.quantity) || 0), 0);
+                    const remaining = taken - sold - dairy;
+                    return remaining < 0 ? "⚠️ OVERSOLD!" : "units available";
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            {/* Calculation Formula */}
+            <div style={{ 
+              background: "rgba(2, 132, 199, 0.1)", 
+              padding: "16px", 
+              borderRadius: 10, 
+              border: "2px dashed #0284c7",
+              marginBottom: 0
+            }}>
+              <p style={{ 
+                margin: 0, 
+                color: "#0369a1", 
+                fontWeight: 700,
+                fontSize: "0.95em"
+              }}>
+                📐 Calculation: <strong>Remaining = Stock Taken - (Sold to Customers + Kept at Dairy)</strong>
+              </p>
+            </div>
+          </div>
+
+          {/* EXPORT & ACTIONS SECTION */}
           <div
             style={{
-              marginTop: 18,
+              marginTop: 28,
+              marginBottom: 28,
               display: "flex",
               gap: 16,
               flexWrap: "wrap",
               justifyContent: "center",
+              alignItems: "center",
+              padding: "20px",
+              background: "linear-gradient(135deg, #f0f9ff 0%, #f5f3ff 100%)",
+              borderRadius: 14,
+              border: "2px solid #0284c7",
+              maxWidth: 1000,
+              marginLeft: "auto",
+              marginRight: "auto",
+              boxShadow: "0 4px 16px #0284c722"
             }}
           >
+            <div style={{ 
+              width: "100%", 
+              textAlign: "center", 
+              marginBottom: 12,
+              paddingBottom: 12,
+              borderBottom: "2px solid #bfdbfe"
+            }}>
+              <h3 style={{
+                margin: 0,
+                color: "#0369a1",
+                fontWeight: 900,
+                fontSize: "1.4rem",
+                letterSpacing: "0.05em"
+              }}>
+                📤 EXPORT OPTIONS
+              </h3>
+              <p style={{
+                margin: "6px 0 0 0",
+                color: "#0891b2",
+                fontWeight: 600,
+                fontSize: "0.95em"
+              }}>
+                Save your demo sales record in multiple formats
+              </p>
+            </div>
+
             <button
               type="button"
               className="btn-outline"
               style={{
-                padding: "10px 24px",
-                fontWeight: 700,
-                fontSize: "1.08em",
-                borderRadius: 8,
-                background: "#fff",
-                color: "#2563eb",
-                border: "2px solid #2563eb",
+                padding: "14px 32px",
+                fontWeight: 800,
+                fontSize: "1.1em",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                boxShadow: "0 4px 12px #10b98144",
+                minWidth: 200,
+                letterSpacing: "0.03em"
               }}
               onClick={handleExportExcel}
+              onMouseOver={(e) => {
+                e.target.style.transform = "translateY(-3px)";
+                e.target.style.boxShadow = "0 8px 20px #10b98155";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 4px 12px #10b98144";
+              }}
             >
-              Export to Excel
+              📊 Export to Excel
             </button>
 
             <button
               type="button"
               className="btn-outline"
               style={{
-                padding: "10px 24px",
-                fontWeight: 700,
-                fontSize: "1.08em",
-                borderRadius: 8,
-                background: "#fff",
-                color: "#2563eb",
-                border: "2px solid #2563eb",
+                padding: "14px 32px",
+                fontWeight: 800,
+                fontSize: "1.1em",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                boxShadow: "0 4px 12px #3b82f644",
+                minWidth: 200,
+                letterSpacing: "0.03em"
               }}
               onClick={handleExportPDF}
+              onMouseOver={(e) => {
+                e.target.style.transform = "translateY(-3px)";
+                e.target.style.boxShadow = "0 8px 20px #3b82f655";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 4px 12px #3b82f644";
+              }}
             >
-              Download PDF
+              📄 Download PDF
             </button>
 
             <button
               type="button"
               className="btn-outline"
               style={{
-                padding: "10px 24px",
-                fontWeight: 700,
-                fontSize: "1.08em",
-                borderRadius: 8,
-                background: "#e3eefd",
-                color: "#174ea6",
-                border: "2px solid #b6c7e6",
+                padding: "14px 32px",
+                fontWeight: 800,
+                fontSize: "1.1em",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #ec4899 0%, #db2777 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                boxShadow: "0 4px 12px #ec489944",
+                minWidth: 200,
+                letterSpacing: "0.03em"
               }}
               onClick={handleGenerateSummary}
+              onMouseOver={(e) => {
+                e.target.style.transform = "translateY(-3px)";
+                e.target.style.boxShadow = "0 8px 20px #ec489955";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 4px 12px #ec489944";
+              }}
             >
-              Generate Summary
+              💬 WhatsApp Summary
             </button>
 
             <button
               type="submit"
               className="btn-primary"
               style={{
-                padding: "10px 24px",
-                fontWeight: 700,
-                fontSize: "1.08em",
-                borderRadius: 8,
+                padding: "14px 40px",
+                fontWeight: 900,
+                fontSize: "1.15em",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                transition: "all 0.3s",
+                boxShadow: "0 4px 12px #8b5cf644",
+                minWidth: 240,
+                letterSpacing: "0.05em"
               }}
-              // Allow submit even if submitting (remove lock)
-              // disabled={submitting}
+              onMouseOver={(e) => {
+                e.target.style.transform = "translateY(-3px)";
+                e.target.style.boxShadow = "0 8px 20px #8b5cf655";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.transform = "translateY(0)";
+                e.target.style.boxShadow = "0 4px 12px #8b5cf644";
+              }}
             >
-              {submitting ? "Submitting..." : "Final Submit"}
+              {submitting ? "⏳ Submitting..." : "✅ FINAL SUBMIT"}
             </button>
           </div>
 
@@ -1918,7 +3125,7 @@ ${stockLines || "—"}
 
             <div style={{ marginTop: 14 }}>
               <b>Stock at Dairy</b>
-              {stock.length === 0 ? (
+              {stockAtDairy.length === 0 ? (
                 <div style={{ color: "#b91c1c" }}>No stock added.</div>
               ) : (
                 <table
@@ -1936,7 +3143,7 @@ ${stockLines || "—"}
                     </tr>
                   </thead>
                   <tbody>
-                    {stock.map((s, idx) => (
+                    {stockAtDairy.map((s, idx) => (
                       <tr
                         key={idx}
                         style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
@@ -1947,6 +3154,49 @@ ${stockLines || "—"}
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <b>Payment Collected</b>
+              {paymentsCollected.length === 0 ? (
+                <div style={{ color: "#b91c1c" }}>No payments added.</div>
+              ) : (
+                <>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      marginTop: 6,
+                      fontSize: "0.98em",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#e3eefd" }}>
+                        <th>Amount</th>
+                        <th>Mode</th>
+                        <th>Given By</th>
+                        <th>Taken By</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentsCollected.map((p, idx) => (
+                        <tr
+                          key={idx}
+                          style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
+                        >
+                          <td>₹{parseFloat(p.amount).toFixed(2)}</td>
+                          <td>{p.mode}</td>
+                          <td>{p.givenBy}</td>
+                          <td>{p.takenBy}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: 8, fontWeight: "bold", color: "#2563eb" }}>
+                    Total Payment: ₹{paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0).toFixed(2)}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -2031,6 +3281,7 @@ ${stockLines || "—"}
           
           </div>
           </div>
+
           </form>
         <footer
           className="footer-credit"
