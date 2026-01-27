@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd Internalsoftware-main && npm run build",
+  "outputDirectory": "Internalsoftware-main/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
