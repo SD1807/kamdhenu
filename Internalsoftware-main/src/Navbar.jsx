@@ -15,7 +15,7 @@ export default function Navbar() {
   const navLinks = [
     { to: '/', label: 'Home' },
     { to: '/form', label: 'Field Officer Daily Form' },
-    { to: '/demo', label: 'Demo Sales List' },
+    { to: '/demo-sales-list', label: 'Demo Sales List' },
     { to: '/history', label: 'History' },
     { to: '/member-page', label: 'Member' },
     { to: '/route-planner', label: 'Route Planner' },

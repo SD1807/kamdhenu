@@ -131,10 +131,51 @@ export const useDairyStockData = (villageId) => {
 /**
  * Hook to fetch sales data for a selected village
  * Returns aggregated sales by packaging type with real-time updates
+ * For combo offers, breaks down into component parts
  */
 export const useSalesData = (villageId) => {
   const [salesData, setSalesData] = useState({});
   const [loading, setLoading] = useState(false);
+
+  // Define combo schemes (must match DemoSalesList.jsx onePlusOneSchemes)
+  const comboSchemes = [
+    { label: "1LTR JAR + 1LTR JAR", parts: ["1LTR JAR", "1LTR JAR"] },
+    { label: "1LTR JAR + 2LTR JAR", parts: ["1LTR JAR", "2LTR JAR"] },
+    { label: "1LTR JAR + 5LTR PLASTIC JAR", parts: ["1LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "1LTR JAR + 5LTR STEEL BARNI", parts: ["1LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "1LTR JAR + 10 LTR JAR", parts: ["1LTR JAR", "10 LTR JAR"] },
+    { label: "1LTR JAR + 10 LTR STEEL", parts: ["1LTR JAR", "10 LTR STEEL"] },
+    { label: "1LTR JAR + 20 LTR CAN", parts: ["1LTR JAR", "20 LTR CAN"] },
+    { label: "1LTR JAR + 20 LTR STEEL", parts: ["1LTR JAR", "20 LTR STEEL"] },
+    { label: "2LTR JAR + 2LTR JAR", parts: ["2LTR JAR", "2LTR JAR"] },
+    { label: "2LTR JAR + 5LTR PLASTIC JAR", parts: ["2LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "2LTR JAR + 5LTR STEEL BARNI", parts: ["2LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "2LTR JAR + 10 LTR JAR", parts: ["2LTR JAR", "10 LTR JAR"] },
+    { label: "2LTR JAR + 10 LTR STEEL", parts: ["2LTR JAR", "10 LTR STEEL"] },
+    { label: "2LTR JAR + 20 LTR CAN", parts: ["2LTR JAR", "20 LTR CAN"] },
+    { label: "2LTR JAR + 20 LTR STEEL", parts: ["2LTR JAR", "20 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 5LTR PLASTIC JAR", parts: ["5LTR PLASTIC JAR", "5LTR PLASTIC JAR"] },
+    { label: "5LTR PLASTIC JAR + 5LTR STEEL BARNI", parts: ["5LTR PLASTIC JAR", "5LTR STEEL BARNI"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR JAR", parts: ["5LTR PLASTIC JAR", "10 LTR JAR"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR STEEL", parts: ["5LTR PLASTIC JAR", "10 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR CAN", parts: ["5LTR PLASTIC JAR", "20 LTR CAN"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR STEEL", parts: ["5LTR PLASTIC JAR", "20 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 5LTR STEEL BARNI", parts: ["5LTR STEEL BARNI", "5LTR STEEL BARNI"] },
+    { label: "5LTR STEEL BARNI + 10 LTR JAR", parts: ["5LTR STEEL BARNI", "10 LTR JAR"] },
+    { label: "5LTR STEEL BARNI + 10 LTR STEEL", parts: ["5LTR STEEL BARNI", "10 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 20 LTR CAN", parts: ["5LTR STEEL BARNI", "20 LTR CAN"] },
+    { label: "5LTR STEEL BARNI + 20 LTR STEEL", parts: ["5LTR STEEL BARNI", "20 LTR STEEL"] },
+    { label: "10 LTR JAR + 10 LTR JAR", parts: ["10 LTR JAR", "10 LTR JAR"] },
+    { label: "10 LTR JAR + 10 LTR STEEL", parts: ["10 LTR JAR", "10 LTR STEEL"] },
+    { label: "10 LTR JAR + 20 LTR CAN", parts: ["10 LTR JAR", "20 LTR CAN"] },
+    { label: "10 LTR JAR + 20 LTR STEEL", parts: ["10 LTR JAR", "20 LTR STEEL"] },
+    { label: "10 LTR STEEL + 10 LTR STEEL", parts: ["10 LTR STEEL", "10 LTR STEEL"] },
+    { label: "10 LTR STEEL + 20 LTR CAN", parts: ["10 LTR STEEL", "20 LTR CAN"] },
+    { label: "10 LTR STEEL + 20 LTR STEEL", parts: ["10 LTR STEEL", "20 LTR STEEL"] },
+    { label: "20 LTR CAN + 20 LTR CAN", parts: ["20 LTR CAN", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR CAN", parts: ["20 LTR STEEL", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR STEEL", parts: ["20 LTR STEEL", "20 LTR STEEL"] },
+  ];
 
   useEffect(() => {
     if (!villageId) {
@@ -166,7 +207,19 @@ export const useSalesData = (villageId) => {
             const custData = custDoc.data();
             const packaging = custData.orderPackaging || "Unknown";
             const qty = parseFloat(custData.orderQty) || 0;
-            sales[packaging] = (sales[packaging] || 0) + qty;
+
+            // Check if this is a combo offer
+            const comboScheme = comboSchemes.find(s => s.label === packaging);
+            
+            if (comboScheme) {
+              // Break down combo into individual parts
+              comboScheme.parts.forEach(part => {
+                sales[part] = (sales[part] || 0) + qty;
+              });
+            } else {
+              // Regular packaging - just add as-is
+              sales[packaging] = (sales[packaging] || 0) + qty;
+            }
           });
         }
 

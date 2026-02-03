@@ -13,6 +13,7 @@ import { getAuth } from "firebase/auth";
 import Navbar from "./Navbar";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 
 export default function MemberPage() {
   // State for Excel-imported customers
@@ -39,17 +40,7 @@ export default function MemberPage() {
     remarks: "",
   });
 
-const packagingOptions = [
-  "1LTR JAR: ₹145",
-  "2LTR JAR: ₹275",
-  "5LTR PLASTIC JAR: ₹665",
-  "5LTR STEEL બરણી: ₹890",
-  "10 LTR JAR: ₹1,340",
-  "10 LTR STEEL બરણી: ₹1,770",
-  "20 LTR CARBO: ₹2,550",
-  "20 LTR CANL : ₹3,250",
-  "20 LTR STEEL બરણી: ₹3,520",
-];
+const packagingNames = getPackagingNames();
 
  const handleCustomerPhotoChange = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -272,7 +263,7 @@ const packagingOptions = [
                   style={{ width: "100%", padding: "0.5rem" }}
                 >
                   <option value="">Select Package</option>
-                  {packagingOptions.map(opt => (
+                  {packagingNames.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
@@ -327,9 +318,7 @@ const packagingOptions = [
               <div style={{ fontWeight: "bold" }}>
                 Total: ₹{(() => {
                   if (!customerInput.orderPackaging) return 0;
-                  const match = packagingOptions.find(opt => opt.startsWith(customerInput.orderPackaging));
-                  if (!match) return 0;
-                  const price = parseInt(match.split("₹")[1].replace(",", "")) || 0;
+                  const price = getPriceByName(customerInput.orderPackaging) || 0;
                   const qty = parseInt(customerInput.orderQty) || 0;
                   return price * qty;
                 })()}
