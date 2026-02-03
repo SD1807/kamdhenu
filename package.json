@@ -1,10 +1,14 @@
-"scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "preview": "vite preview"
-},
-
 {
+  "name": "kamdhenu-root",
+  "version": "1.0.0",
+  "description": "Root configuration for Kamdhenu project",
+  "private": true,
+  "scripts": {
+    "dev": "cd Internalsoftware-main && vite",
+    "build": "cd Internalsoftware-main && vite build",
+    "preview": "cd Internalsoftware-main && vite preview",
+    "lint": "cd Internalsoftware-main && eslint ."
+  },
   "dependencies": {
     "@babel/parser": "^7.28.5"
   },
@@ -12,3 +16,4 @@
     "vite": "^7.3.1"
   }
 }
+
