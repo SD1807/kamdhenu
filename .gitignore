@@ -1,0 +1,13 @@
+node_modules/
+.vscode/
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+dist/
+build/
+.cache/
+*.backup
+*.bak
+*.old
