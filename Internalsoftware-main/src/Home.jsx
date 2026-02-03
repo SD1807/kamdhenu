@@ -74,7 +74,7 @@ export default function Home() {
             letterSpacing: "0.04em",
           }}
         >
-          FSC DAILY DATA PORTAL
+          KAMDHENU
         </h1>
         <p
           style={{

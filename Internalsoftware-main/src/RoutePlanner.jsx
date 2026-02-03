@@ -4,20 +4,9 @@ import { collection, addDoc } from 'firebase/firestore';
 import ExcelJS from 'exceljs';
 import Navbar from './Navbar';
 import './form.css';
+import { getPackagingNames } from './config/packagingConfig';
 
-const packagingOptions = [
-  "1L JAR",
-  "2L JAR",
-  "5L PLASTIC JAR",
-  "5L STEEL BARNI",
-  "10 LTR JAR",
-  "10 LTR STEEL BARNI",
-  "20 LTR CARBO",
-  "20 LTR CAN",
-  "20 LTR STEEL BARNI"
-];
-
-
+const packagingNames = getPackagingNames();
 
 const RoutePlanner = () => {
   const [date, setDate] = useState('');
@@ -169,7 +158,7 @@ const RoutePlanner = () => {
                       }}
                       style={{flex:2, borderRadius:8, padding:10, border:'1.5px solid #b6c7e6', fontFamily:'inherit', fontSize:'1em', background:'#f7fafd'}}>
                       <option value="">Select Packaging</option>
-                      {packagingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      {packagingNames.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                     <input
                       type="number"
@@ -208,7 +197,7 @@ const RoutePlanner = () => {
                       }}
                       style={{flex:2, borderRadius:8, padding:10, border:'1.5px solid #b6c7e6', fontFamily:'inherit', fontSize:'1em', background:'#f7fafd'}}>
                       <option value="">Select Packaging</option>
-                      {packagingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      {packagingNames.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
                     <input
                       type="number"

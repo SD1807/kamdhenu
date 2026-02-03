@@ -14,6 +14,8 @@ import { getAuth } from "firebase/auth";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
+import { VillageSelector } from "./components/stock/VillageSelector";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 
 export default function MemberPage() {
   const [villages, setVillages] = useState([]);
@@ -25,6 +27,14 @@ export default function MemberPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [demoStockTaken, setDemoStockTaken] = useState([]);
   const [demoStockAtDairy, setDemoStockAtDairy] = useState([]);
+  const [stockReturned, setStockReturned] = useState([]);
+  const [paymentsCollected, setPaymentsCollected] = useState([]);
+  const [remainingStockList, setRemainingStockList] = useState([]);
+  
+  const [stockAtDairyInput, setStockAtDairyInput] = useState({ packaging: "", quantity: "" });
+  const [returnedStockInput, setReturnedStockInput] = useState({ packaging: "", quantity: "" });
+  const [paymentInput, setPaymentInput] = useState({ amount: "", mode: "", givenBy: "", takenBy: "" });
+  
   const [customerInput, setCustomerInput] = useState({
     name: "",
     code: "",
@@ -32,44 +42,93 @@ export default function MemberPage() {
     orderPackaging: "",
     orderQty: "",
     remarks: "",
+    paymentMethod: "",
   });
 
-  const packagingOptions = [
-    "1LTR JAR: ₹145",
-    "2LTR JAR: ₹275",
-    "5LTR PLASTIC JAR: ₹665",
-    "5LTR STEEL બરણી: ₹890",
-    "10 LTR JAR: ₹1,340",
-    "10 LTR STEEL બરણી: ₹1,770",
-    "20 LTR CARBO: ₹2,550",
-    "20 LTR CANL : ₹3,250",
-    "20 LTR STEEL બરણી: ₹3,520",
+  // Get packaging names from config (without prices)
+  const packagingNames = getPackagingNames();
+
+  // Predefined 1+1 scheme combinations
+  const onePlusOneSchemes = [
+    { label: "1LTR JAR + 1LTR JAR", key: "1P_1P", base: 145 + 145, offer: 250, parts: ["1LTR JAR", "1LTR JAR"] },
+    { label: "1LTR JAR + 2LTR JAR", key: "1P_2P", base: 145 + 275, offer: 360, parts: ["1LTR JAR", "2LTR JAR"] },
+    { label: "1LTR JAR + 5LTR PLASTIC JAR", key: "1P_5P", base: 145 + 665, offer: 690, parts: ["1LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "1LTR JAR + 5LTR STEEL BARNI", key: "1P_5S", base: 145 + 890, offer: 880, parts: ["1LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "1LTR JAR + 10 LTR JAR", key: "1P_10P", base: 145 + 1340, offer: 1260, parts: ["1LTR JAR", "10 LTR JAR"] },
+    { label: "1LTR JAR + 10 LTR STEEL", key: "1P_10S", base: 145 + 1770, offer: 1630, parts: ["1LTR JAR", "10 LTR STEEL"] },
+    { label: "1LTR JAR + 20 LTR CAN", key: "1P_20C", base: 145 + 3250, offer: 2885, parts: ["1LTR JAR", "20 LTR CAN"] },
+    { label: "1LTR JAR + 20 LTR STEEL", key: "1P_20S", base: 145 + 3520, offer: 3115, parts: ["1LTR JAR", "20 LTR STEEL"] },
+    { label: "2LTR JAR + 2LTR JAR", key: "2P_2P", base: 275 + 275, offer: 470, parts: ["2LTR JAR", "2LTR JAR"] },
+    { label: "2LTR JAR + 5LTR PLASTIC JAR", key: "2P_5P", base: 275 + 665, offer: 800, parts: ["2LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "2LTR JAR + 5LTR STEEL BARNI", key: "2P_5S", base: 275 + 890, offer: 990, parts: ["2LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "2LTR JAR + 10 LTR JAR", key: "2P_10P", base: 275 + 1340, offer: 1370, parts: ["2LTR JAR", "10 LTR JAR"] },
+    { label: "2LTR JAR + 10 LTR STEEL", key: "2P_10S", base: 275 + 1770, offer: 1740, parts: ["2LTR JAR", "10 LTR STEEL"] },
+    { label: "2LTR JAR + 20 LTR CAN", key: "2P_20C", base: 275 + 3250, offer: 3000, parts: ["2LTR JAR", "20 LTR CAN"] },
+    { label: "2LTR JAR + 20 LTR STEEL", key: "2P_20S", base: 275 + 3520, offer: 3225, parts: ["2LTR JAR", "20 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 5LTR PLASTIC JAR", key: "5P_5P", base: 665 + 665, offer: 1130, parts: ["5LTR PLASTIC JAR", "5LTR PLASTIC JAR"] },
+    { label: "5LTR PLASTIC JAR + 5LTR STEEL BARNI", key: "5P_5S", base: 665 + 890, offer: 1320, parts: ["5LTR PLASTIC JAR", "5LTR STEEL BARNI"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR JAR", key: "5P_10P", base: 665 + 1340, offer: 1700, parts: ["5LTR PLASTIC JAR", "10 LTR JAR"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR STEEL", key: "5P_10S", base: 665 + 1770, offer: 2070, parts: ["5LTR PLASTIC JAR", "10 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR CAN", key: "5P_20C", base: 665 + 3250, offer: 3330, parts: ["5LTR PLASTIC JAR", "20 LTR CAN"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR STEEL", key: "5P_20S", base: 665 + 3520, offer: 3560, parts: ["5LTR PLASTIC JAR", "20 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 5LTR STEEL BARNI", key: "5S_5S", base: 890 + 890, offer: 1515, parts: ["5LTR STEEL BARNI", "5LTR STEEL BARNI"] },
+    { label: "5LTR STEEL BARNI + 10 LTR JAR", key: "5S_10P", base: 890 + 1340, offer: 1895, parts: ["5LTR STEEL BARNI", "10 LTR JAR"] },
+    { label: "5LTR STEEL BARNI + 10 LTR STEEL", key: "5S_10S", base: 890 + 1770, offer: 2260, parts: ["5LTR STEEL BARNI", "10 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 20 LTR CAN", key: "5S_20C", base: 890 + 3250, offer: 3520, parts: ["5LTR STEEL BARNI", "20 LTR CAN"] },
+    { label: "5LTR STEEL BARNI + 20 LTR STEEL", key: "5S_20S", base: 890 + 3520, offer: 3750, parts: ["5LTR STEEL BARNI", "20 LTR STEEL"] },
+    { label: "10 LTR JAR + 10 LTR JAR", key: "10P_10P", base: 1340 + 1340, offer: 2280, parts: ["10 LTR JAR", "10 LTR JAR"] },
+    { label: "10 LTR JAR + 10 LTR STEEL", key: "10P_10S", base: 1340 + 1770, offer: 2650, parts: ["10 LTR JAR", "10 LTR STEEL"] },
+    { label: "10 LTR JAR + 20 LTR CAN", key: "10P_20C", base: 1340 + 3250, offer: 3900, parts: ["10 LTR JAR", "20 LTR CAN"] },
+    { label: "10 LTR JAR + 20 LTR STEEL", key: "10P_20S", base: 1340 + 3520, offer: 4135, parts: ["10 LTR JAR", "20 LTR STEEL"] },
+    { label: "10 LTR STEEL + 10 LTR STEEL", key: "10S_10S", base: 1770 + 1770, offer: 3050, parts: ["10 LTR STEEL", "10 LTR STEEL"] },
+    { label: "10 LTR STEEL + 20 LTR CAN", key: "10S_20C", base: 1770 + 3250, offer: 4270, parts: ["10 LTR STEEL", "20 LTR CAN"] },
+    { label: "10 LTR STEEL + 20 LTR STEEL", key: "10S_20S", base: 1770 + 3520, offer: 4500, parts: ["10 LTR STEEL", "20 LTR STEEL"] },
+    { label: "20 LTR CAN + 20 LTR CAN", key: "20C_20C", base: 3250 + 3250, offer: 5530, parts: ["20 LTR CAN", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR CAN", key: "20S_20C", base: 3520 + 3250, offer: 5750, parts: ["20 LTR STEEL", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR STEEL", key: "20S_20S", base: 3520 + 3520, offer: 6000, parts: ["20 LTR STEEL", "20 LTR STEEL"] },
   ];
+
   const handleCustomerPhotoChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+
+    // Validate file
+    const maxSizeInMB = 5;
+    if (file.size > maxSizeInMB * 1024 * 1024) {
+      alert(`File size must be less than ${maxSizeInMB}MB`);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      alert("Please select a valid image file");
+      return;
+    }
+
+    // Convert to base64 and store locally (no Firebase Storage needed)
     try {
       setUploadingPhoto(true);
-      // temporary preview
-      const tmpReader = new FileReader();
-      tmpReader.onload = () => setCustomerInput(prev => ({ ...prev, photoPreview: tmpReader.result }));
-      tmpReader.readAsDataURL(file);
-
-      const storageRef = ref(storage, `members/${Date.now()}_${file.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
-      uploadTask.on('state_changed', () => {}, (err) => {
-        console.error('Upload error', err);
+      
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64String = reader.result;
+        // Store base64 directly in state - will be saved to Firestore
+        setCustomerInput(prev => ({ 
+          ...prev, 
+          photo: base64String,
+          photoPreview: base64String
+        }));
         setUploadingPhoto(false);
-        alert('Photo upload failed');
-      }, async () => {
-        const url = await getDownloadURL(uploadTask.snapshot.ref);
-        setCustomerInput(prev => ({ ...prev, photo: url }));
+        alert('Photo loaded successfully');
+      };
+      reader.onerror = () => {
         setUploadingPhoto(false);
-      });
+        alert('Failed to read photo file');
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
-      console.error(err);
+      console.error('Error processing photo:', err);
       setUploadingPhoto(false);
-      alert('Failed to upload photo: ' + err.message);
+      alert('Photo processing failed: ' + (err.message || err));
     }
   };
   // 🔹 Fetch villages
@@ -186,6 +245,7 @@ export default function MemberPage() {
             orderPackaging: row.orderPackaging || row.OrderPackaging || "",
             orderQty: row.orderQty || row.OrderQty || "",
             remarks: row.remarks || row.Remarks || "",
+            paymentMethod: row.paymentMethod || row.PaymentMethod || "",
             villageId: selectedVillageid,
             addedByRole: "member",
             addedBy,
@@ -222,23 +282,34 @@ export default function MemberPage() {
     const email = user?.email || "";
     const addedBy = username || displayName || email || "Unknown";
 
+    // Detect if selected packaging is a 1+1 scheme
+    const detectedScheme = onePlusOneSchemes.find(s => s.label === customerInput.orderPackaging);
+    
     const payload = {
       name: customerInput.name,
       code: customerInput.code || "",
       mobile: customerInput.mobile,
       orderPackaging: customerInput.orderPackaging || "",
       orderQty: customerInput.orderQty || "",
-      photo: customerInput.photo || customerInput.photoPreview || "",
+      photo: customerInput.photo || null, // Only save actual upload URL, not preview
       remarks: customerInput.remarks || "",
-
-      villageId: selectedVillageid,
-      addedByRole: "member",
-      addedBy,
-      addedByUsername: username,
-      addedByDisplayName: displayName,
-      addedByEmail: email,
-      createdAt: serverTimestamp(),
+      paymentMethod: customerInput.paymentMethod || "",
     };
+    
+    // Add scheme info if applicable
+    if (detectedScheme) {
+      payload.schemeType = "1+1";
+      payload.schemeKey = detectedScheme.key;
+      payload.appliedPrice = detectedScheme.offer;
+    }
+    
+    payload.villageId = selectedVillageid;
+    payload.addedByRole = "member";
+    payload.addedBy = addedBy;
+    payload.addedByUsername = username;
+    payload.addedByDisplayName = displayName;
+    payload.addedByEmail = email;
+    payload.createdAt = serverTimestamp();
 
     try {
       await addDoc(collection(db, "customers"), payload);
@@ -255,7 +326,7 @@ export default function MemberPage() {
         await addDoc(collection(db, "demosales", demoDoc.id, "customers"), payload);
       }
 
-      setCustomerInput({ name: "", code: "", mobile: "", orderPackaging: "", orderQty: "", remarks: "" });
+      setCustomerInput({ name: "", code: "", mobile: "", orderPackaging: "", orderQty: "", remarks: "", photoPreview: null });
       alert("Customer added successfully!");
     } catch (err) {
       alert("Error saving customer: " + err.message);
@@ -273,14 +344,17 @@ export default function MemberPage() {
       <Navbar />
       <h1>Member Page</h1>
 
-      {/* Village Selection */}
-      {villages.length === 0 ? <p>No villages yet</p> : (
-        <div style={{ marginBottom: "1rem" }}>
-          <label style={{ fontWeight: 600, marginRight: "0.5rem" }}>Select Village:</label>
-          <select value={selectedVillageid} onChange={e => setSelectedVillageid(e.target.value)}>
-            {villages.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </div>
+      {/* Village Selection with Search */}
+      {villages.length === 0 ? (
+        <p>No villages yet</p>
+      ) : (
+        <VillageSelector
+          villageOptions={villages}
+          selectedVillageId={selectedVillageid}
+          onVillageChange={(villageId) => setSelectedVillageid(villageId)}
+          label="Select Village"
+          showLabel={true}
+        />
       )}
 
       {/* Excel Upload */}
@@ -340,7 +414,17 @@ export default function MemberPage() {
             <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Packaging</label>
             <select name="orderPackaging" value={customerInput.orderPackaging} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }}>
               <option value="">Select Packaging</option>
-              {packagingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              {packagingNames.map(opt => (
+                <option key={opt} value={opt}>{opt} — ₹{getPriceByName(opt)}</option>
+              ))}
+              {/* 1+1 scheme options */}
+              <optgroup label="1+1 Schemes">
+                {onePlusOneSchemes.map(scheme => (
+                  <option key={"scheme-" + scheme.key} value={scheme.label}>
+                    {scheme.label} — Offer ₹{scheme.offer}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
@@ -373,13 +457,45 @@ export default function MemberPage() {
           <input placeholder="Any remarks..." name="remarks" value={customerInput.remarks} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 8 }}>Payment Method</label>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="PAVTI"
+                checked={customerInput.paymentMethod === 'PAVTI'}
+                onChange={handleCustomerInput}
+              />
+              <span>PAVTI</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="paymentMethod"
+                value="CASH"
+                checked={customerInput.paymentMethod === 'CASH'}
+                onChange={handleCustomerInput}
+              />
+              <span>CASH</span>
+            </label>
+          </div>
+        </div>
+
         <div style={{ fontWeight: "bold", marginTop: 14, padding: 12, background: "#fff", borderRadius: 6, textAlign: "center", color: "#0369a1", fontSize: "1.1em" }}>
           💰 Total Value: ₹{(() => {
             if (!customerInput.orderPackaging) return 0;
-            const match = packagingOptions.find(opt => opt.startsWith(customerInput.orderPackaging));
-            if (!match) return 0;
-            const price = parseInt(match.split("₹")[1].replace(",", "")) || 0;
             const qty = parseInt(customerInput.orderQty) || 0;
+            
+            // Check if selected packaging is a 1+1 scheme
+            const scheme = onePlusOneSchemes.find(s => s.label === customerInput.orderPackaging);
+            if (scheme) {
+              return scheme.offer * qty;
+            }
+            
+            // Otherwise, get price from packaging config
+            const price = getPriceByName(customerInput.orderPackaging) || 0;
             return price * qty;
           })()}
         </div>
@@ -403,6 +519,7 @@ export default function MemberPage() {
                   <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Qty</th>
                   <th style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #1e40af" }}>Photo</th>
                   <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Remarks</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Payment Method</th>
                   <th style={{ padding: "12px 14px", textAlign: "left" }}>Added By</th>
                 </tr>
               </thead>
@@ -421,6 +538,7 @@ export default function MemberPage() {
                       )}
                     </td>
                     <td style={{ padding: "12px 14px", color: "#6b7280", fontSize: "0.9em" }}>{c.remarks || "-"}</td>
+                    <td style={{ padding: "12px 14px", fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || "—"}</td>
                     <td style={{ padding: "12px 14px", color: "#4b5563", fontSize: "0.9em" }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</td>
                   </tr>
                 ))}

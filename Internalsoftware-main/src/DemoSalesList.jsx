@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import notoSansGujarati from "./fonts/NotoSansGujarati-Regular.js";
@@ -13,20 +13,11 @@ import "./form.css";
 import { toast } from "react-toastify";
 import { deleteDoc, updateDoc } from "firebase/firestore";
 import ExcelJS from "exceljs";
+import { VillageSelector } from "./components/stock/VillageSelector";
+import { PACKAGING_DATA, getPriceByName, getPackagingNames, getLitresByName } from "./config/packagingConfig";
 
-
-
-const packagingOptions = [
-  "1LTR JAR: ₹145",
-  "2LTR JAR: ₹275",
-  "5LTR PLASTIC JAR: ₹665",
-  "5LTR STEEL બરણી: ₹890",
-  "10 LTR JAR: ₹1,340",
-  "10 LTR STEEL બરણી: ₹1,770",
-  "20 LTR CARBO: ₹2,550",
-  "20 LTR CANL : ₹3,250",
-  "20 LTR STEEL બરણી: ₹3,520",
-];
+// Get packaging names array for dropdown display (without prices)
+const packagingNames = getPackagingNames();
 
 const initialDemoInfo = {
   date: "",
@@ -51,6 +42,9 @@ const initialCustomer = {
   orderQty: "",
   schemeKey: "",
   manualOffer: "",
+  appliedPrice: "",
+  paymentMethod: "",
+  photo: null,
 };
 
 const initialStock = {
@@ -73,6 +67,9 @@ const initialPaymentEntry = {
 };
 
 const DemoSalesList = () => {
+  // Ref for customer form section to enable auto-scroll
+  const customerFormRef = useRef(null);
+  
   // New: Stock returned from demo
   const [stockReturned, setStockReturned] = useState([]);
   const [returnedStockInput, setReturnedStockInput] = useState(initialReturnedStock);
@@ -284,29 +281,43 @@ useEffect(() => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    // Upload to Firebase Storage and save download URL to state
+    // Validate file
+    const maxSizeInMB = 5;
+    if (file.size > maxSizeInMB * 1024 * 1024) {
+      toast.error(`File size must be less than ${maxSizeInMB}MB`);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error("Please select a valid image file");
+      return;
+    }
+
+    // Convert to base64 and store locally (no Firebase Storage needed)
     try {
-      const storageRef = ref(storage, `customers/${Date.now()}_${file.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
-      uploadTask.on(
-        "state_changed",
-        () => {},
-        (err) => {
-          console.error("Upload error:", err);
-          toast.error("Failed to upload photo");
-        },
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          setCustomerInput((prev) => ({ ...prev, photo: url }));
-        }
-      );
-      // show temporary preview while upload (optional)
-      const tmpReader = new FileReader();
-      tmpReader.onload = () => setCustomerInput((prev) => ({ ...prev, photoPreview: tmpReader.result }));
-      tmpReader.readAsDataURL(file);
+      setUploadingPhoto(true);
+      
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64String = reader.result;
+        // Store base64 directly in state - will be saved to Firestore
+        setCustomerInput((prev) => ({ 
+          ...prev, 
+          photo: base64String,
+          photoPreview: base64String
+        }));
+        setUploadingPhoto(false);
+        toast.success("Photo loaded successfully");
+      };
+      reader.onerror = () => {
+        setUploadingPhoto(false);
+        toast.error("Failed to read photo file");
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
-      console.error(err);
-      toast.error("Photo upload failed: " + (err.message || err));
+      console.error("Error processing photo:", err);
+      setUploadingPhoto(false);
+      toast.error("Photo processing failed: " + (err.message || err));
     }
   };
 
@@ -334,42 +345,42 @@ useEffect(() => {
 
   // Predefined 1+1 scheme combinations: map key -> {label, offer}
   const onePlusOneSchemes = [
-    { label: "1L Plastic + 1L Plastic", key: "1P_1P", base: 145 + 145, offer: 250, parts: ["1L Plastic", "1L Plastic"] },
-    { label: "1L Plastic + 2L Plastic", key: "1P_2P", base: 145 + 275, offer: 360, parts: ["1L Plastic", "2L Plastic"] },
-    { label: "1L Plastic + 5L Plastic", key: "1P_5P", base: 145 + 665, offer: 690, parts: ["1L Plastic", "5L Plastic"] },
-    { label: "1L Plastic + 5L Steel", key: "1P_5S", base: 145 + 890, offer: 880, parts: ["1L Plastic", "5L Steel"] },
-    { label: "1L Plastic + 10L Plastic", key: "1P_10P", base: 145 + 1340, offer: 1260, parts: ["1L Plastic", "10L Plastic"] },
-    { label: "1L Plastic + 10L Steel", key: "1P_10S", base: 145 + 1770, offer: 1630, parts: ["1L Plastic", "10L Steel"] },
-    { label: "1L Plastic + 20L Can", key: "1P_20C", base: 145 + 3250, offer: 2885, parts: ["1L Plastic", "20L Can"] },
-    { label: "1L Plastic + 20L Steel", key: "1P_20S", base: 145 + 3520, offer: 3115, parts: ["1L Plastic", "20L Steel"] },
-    { label: "2L Plastic + 2L Plastic", key: "2P_2P", base: 275 + 275, offer: 470, parts: ["2L Plastic", "2L Plastic"] },
-    { label: "2L Plastic + 5L Plastic", key: "2P_5P", base: 275 + 665, offer: 800, parts: ["2L Plastic", "5L Plastic"] },
-    { label: "2L Plastic + 5L Steel", key: "2P_5S", base: 275 + 890, offer: 990, parts: ["2L Plastic", "5L Steel"] },
-    { label: "2L Plastic + 10L Plastic", key: "2P_10P", base: 275 + 1340, offer: 1370, parts: ["2L Plastic", "10L Plastic"] },
-    { label: "2L Plastic + 10L Steel", key: "2P_10S", base: 275 + 1770, offer: 1740, parts: ["2L Plastic", "10L Steel"] },
-    { label: "2L Plastic + 20L Can", key: "2P_20C", base: 275 + 3250, offer: 3000, parts: ["2L Plastic", "20L Can"] },
-    { label: "2L Plastic + 20L Steel", key: "2P_20S", base: 275 + 3520, offer: 3225, parts: ["2L Plastic", "20L Steel"] },
-    { label: "5L Plastic + 5L Plastic", key: "5P_5P", base: 665 + 665, offer: 1130, parts: ["5L Plastic", "5L Plastic"] },
-    { label: "5L Plastic + 5L Steel", key: "5P_5S", base: 665 + 890, offer: 1320, parts: ["5L Plastic", "5L Steel"] },
-    { label: "5L Plastic + 10L Plastic", key: "5P_10P", base: 665 + 1340, offer: 1700, parts: ["5L Plastic", "10L Plastic"] },
-    { label: "5L Plastic + 10L Steel", key: "5P_10S", base: 665 + 1770, offer: 2070, parts: ["5L Plastic", "10L Steel"] },
-    { label: "5L Plastic + 20L Can", key: "5P_20C", base: 665 + 3250, offer: 3330, parts: ["5L Plastic", "20L Can"] },
-    { label: "5L Plastic + 20L Steel", key: "5P_20S", base: 665 + 3520, offer: 3560, parts: ["5L Plastic", "20L Steel"] },
-    { label: "5L Steel + 5L Steel", key: "5S_5S", base: 890 + 890, offer: 1515, parts: ["5L Steel", "5L Steel"] },
-    { label: "5L Steel + 10L Plastic", key: "5S_10P", base: 890 + 1340, offer: 1895, parts: ["5L Steel", "10L Plastic"] },
-    { label: "5L Steel + 10L Steel", key: "5S_10S", base: 890 + 1770, offer: 2260, parts: ["5L Steel", "10L Steel"] },
-    { label: "5L Steel + 20L Can", key: "5S_20C", base: 890 + 3250, offer: 3520, parts: ["5L Steel", "20L Can"] },
-    { label: "5L Steel + 20L Steel", key: "5S_20S", base: 890 + 3520, offer: 3750, parts: ["5L Steel", "20L Steel"] },
-    { label: "10L Plastic + 10L Plastic", key: "10P_10P", base: 1340 + 1340, offer: 2280, parts: ["10L Plastic", "10L Plastic"] },
-    { label: "10L Plastic + 10L Steel", key: "10P_10S", base: 1340 + 1770, offer: 2650, parts: ["10L Plastic", "10L Steel"] },
-    { label: "10L Plastic + 20L Can", key: "10P_20C", base: 1340 + 3250, offer: 3900, parts: ["10L Plastic", "20L Can"] },
-    { label: "10L Plastic + 20L Steel", key: "10P_20S", base: 1340 + 3520, offer: 4135, parts: ["10L Plastic", "20L Steel"] },
-    { label: "10L Steel + 10L Steel", key: "10S_10S", base: 1770 + 1770, offer: 3050, parts: ["10L Steel", "10L Steel"] },
-    { label: "10L Steel + 20L Can", key: "10S_20C", base: 1770 + 3250, offer: 4270, parts: ["10L Steel", "20L Can"] },
-    { label: "10L Steel + 20L Steel", key: "10S_20S", base: 1770 + 3520, offer: 4500, parts: ["10L Steel", "20L Steel"] },
-    { label: "20L Can + 20L Can", key: "20C_20C", base: 3250 + 3250, offer: 5530, parts: ["20L Can", "20L Can"] },
-    { label: "20L Steel + 20L Can", key: "20S_20C", base: 3520 + 3250, offer: 5750, parts: ["20L Steel", "20L Can"] },
-    { label: "20L Steel + 20L Steel", key: "20S_20S", base: 3520 + 3520, offer: 6000, parts: ["20L Steel", "20L Steel"] },
+    { label: "1LTR JAR + 1LTR JAR", key: "1P_1P", base: 145 + 145, offer: 250, parts: ["1LTR JAR", "1LTR JAR"] },
+    { label: "1LTR JAR + 2LTR JAR", key: "1P_2P", base: 145 + 275, offer: 360, parts: ["1LTR JAR", "2LTR JAR"] },
+    { label: "1LTR JAR + 5LTR PLASTIC JAR", key: "1P_5P", base: 145 + 665, offer: 690, parts: ["1LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "1LTR JAR + 5LTR STEEL BARNI", key: "1P_5S", base: 145 + 890, offer: 880, parts: ["1LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "1LTR JAR + 10 LTR JAR", key: "1P_10P", base: 145 + 1340, offer: 1260, parts: ["1LTR JAR", "10 LTR JAR"] },
+    { label: "1LTR JAR + 10 LTR STEEL", key: "1P_10S", base: 145 + 1770, offer: 1630, parts: ["1LTR JAR", "10 LTR STEEL"] },
+    { label: "1LTR JAR + 20 LTR CAN", key: "1P_20C", base: 145 + 3250, offer: 2885, parts: ["1LTR JAR", "20 LTR CAN"] },
+    { label: "1LTR JAR + 20 LTR STEEL", key: "1P_20S", base: 145 + 3520, offer: 3115, parts: ["1LTR JAR", "20 LTR STEEL"] },
+    { label: "2LTR JAR + 2LTR JAR", key: "2P_2P", base: 275 + 275, offer: 470, parts: ["2LTR JAR", "2LTR JAR"] },
+    { label: "2LTR JAR + 5LTR PLASTIC JAR", key: "2P_5P", base: 275 + 665, offer: 800, parts: ["2LTR JAR", "5LTR PLASTIC JAR"] },
+    { label: "2LTR JAR + 5LTR STEEL BARNI", key: "2P_5S", base: 275 + 890, offer: 990, parts: ["2LTR JAR", "5LTR STEEL BARNI"] },
+    { label: "2LTR JAR + 10 LTR JAR", key: "2P_10P", base: 275 + 1340, offer: 1370, parts: ["2LTR JAR", "10 LTR JAR"] },
+    { label: "2LTR JAR + 10 LTR STEEL", key: "2P_10S", base: 275 + 1770, offer: 1740, parts: ["2LTR JAR", "10 LTR STEEL"] },
+    { label: "2LTR JAR + 20 LTR CAN", key: "2P_20C", base: 275 + 3250, offer: 3000, parts: ["2LTR JAR", "20 LTR CAN"] },
+    { label: "2LTR JAR + 20 LTR STEEL", key: "2P_20S", base: 275 + 3520, offer: 3225, parts: ["2LTR JAR", "20 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 5LTR PLASTIC JAR", key: "5P_5P", base: 665 + 665, offer: 1130, parts: ["5LTR PLASTIC JAR", "5LTR PLASTIC JAR"] },
+    { label: "5LTR PLASTIC JAR + 5LTR STEEL BARNI", key: "5P_5S", base: 665 + 890, offer: 1320, parts: ["5LTR PLASTIC JAR", "5LTR STEEL BARNI"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR JAR", key: "5P_10P", base: 665 + 1340, offer: 1700, parts: ["5LTR PLASTIC JAR", "10 LTR JAR"] },
+    { label: "5LTR PLASTIC JAR + 10 LTR STEEL", key: "5P_10S", base: 665 + 1770, offer: 2070, parts: ["5LTR PLASTIC JAR", "10 LTR STEEL"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR CAN", key: "5P_20C", base: 665 + 3250, offer: 3330, parts: ["5LTR PLASTIC JAR", "20 LTR CAN"] },
+    { label: "5LTR PLASTIC JAR + 20 LTR STEEL", key: "5P_20S", base: 665 + 3520, offer: 3560, parts: ["5LTR PLASTIC JAR", "20 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 5LTR STEEL BARNI", key: "5S_5S", base: 890 + 890, offer: 1515, parts: ["5LTR STEEL BARNI", "5LTR STEEL BARNI"] },
+    { label: "5LTR STEEL BARNI + 10 LTR JAR", key: "5S_10P", base: 890 + 1340, offer: 1895, parts: ["5LTR STEEL BARNI", "10 LTR JAR"] },
+    { label: "5LTR STEEL BARNI + 10 LTR STEEL", key: "5S_10S", base: 890 + 1770, offer: 2260, parts: ["5LTR STEEL BARNI", "10 LTR STEEL"] },
+    { label: "5LTR STEEL BARNI + 20 LTR CAN", key: "5S_20C", base: 890 + 3250, offer: 3520, parts: ["5LTR STEEL BARNI", "20 LTR CAN"] },
+    { label: "5LTR STEEL BARNI + 20 LTR STEEL", key: "5S_20S", base: 890 + 3520, offer: 3750, parts: ["5LTR STEEL BARNI", "20 LTR STEEL"] },
+    { label: "10 LTR JAR + 10 LTR JAR", key: "10P_10P", base: 1340 + 1340, offer: 2280, parts: ["10 LTR JAR", "10 LTR JAR"] },
+    { label: "10 LTR JAR + 10 LTR STEEL", key: "10P_10S", base: 1340 + 1770, offer: 2650, parts: ["10 LTR JAR", "10 LTR STEEL"] },
+    { label: "10 LTR JAR + 20 LTR CAN", key: "10P_20C", base: 1340 + 3250, offer: 3900, parts: ["10 LTR JAR", "20 LTR CAN"] },
+    { label: "10 LTR JAR + 20 LTR STEEL", key: "10P_20S", base: 1340 + 3520, offer: 4135, parts: ["10 LTR JAR", "20 LTR STEEL"] },
+    { label: "10 LTR STEEL + 10 LTR STEEL", key: "10S_10S", base: 1770 + 1770, offer: 3050, parts: ["10 LTR STEEL", "10 LTR STEEL"] },
+    { label: "10 LTR STEEL + 20 LTR CAN", key: "10S_20C", base: 1770 + 3250, offer: 4270, parts: ["10 LTR STEEL", "20 LTR CAN"] },
+    { label: "10 LTR STEEL + 20 LTR STEEL", key: "10S_20S", base: 1770 + 3520, offer: 4500, parts: ["10 LTR STEEL", "20 LTR STEEL"] },
+    { label: "20 LTR CAN + 20 LTR CAN", key: "20C_20C", base: 3250 + 3250, offer: 5530, parts: ["20 LTR CAN", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR CAN", key: "20S_20C", base: 3520 + 3250, offer: 5750, parts: ["20 LTR STEEL", "20 LTR CAN"] },
+    { label: "20 LTR STEEL + 20 LTR STEEL", key: "20S_20S", base: 3520 + 3520, offer: 6000, parts: ["20 LTR STEEL", "20 LTR STEEL"] },
   ];
 
   // helper to get scheme details
@@ -410,14 +421,15 @@ useEffect(() => {
   const deductFromStock = (packLabel, qty) => {
     // Map between different packaging naming conventions
     const packagingMap = {
-      "1L Plastic": "1LTR JAR: ₹145",
-      "2L Plastic": "2LTR JAR: ₹275",
-      "5L Plastic": "5LTR PLASTIC JAR: ₹665",
-      "5L Steel": "5LTR STEEL બરણી: ₹890",
-      "10L Plastic": "10 LTR JAR: ₹1,340",
-      "10L Steel": "10 LTR STEEL બરણી: ₹1,770",
-      "20L Can": "20 LTR CANL : ₹3,250",
-      "20L Steel": "20 LTR STEEL બરણી: ₹3,520",
+      "1LTR JAR": "1LTR JAR",
+      "2LTR JAR": "2LTR JAR",
+      "5LTR PLASTIC JAR": "5LTR PLASTIC JAR",
+      "5LTR STEEL BARNI": "5LTR STEEL BARNI",
+      "10 LTR JAR": "10 LTR JAR",
+      "10 LTR STEEL": "10 LTR STEEL",
+      "20 LTR CARBO": "20 LTR CARBO",
+      "20 LTR CAN": "20 LTR CAN",
+      "20 LTR STEEL": "20 LTR STEEL",
     };
     
     setStockTaken((current) => {
@@ -463,14 +475,15 @@ useEffect(() => {
   // Consolidated deduction for multiple parts (like 1+1 schemes) - single state update
   const deductMultipleFromStock = (parts, qty) => {
     const packagingMap = {
-      "1L Plastic": "1LTR JAR: ₹145",
-      "2L Plastic": "2LTR JAR: ₹275",
-      "5L Plastic": "5LTR PLASTIC JAR: ₹665",
-      "5L Steel": "5LTR STEEL બરણી: ₹890",
-      "10L Plastic": "10 LTR JAR: ₹1,340",
-      "10L Steel": "10 LTR STEEL બરણી: ₹1,770",
-      "20L Can": "20 LTR CANL : ₹3,250",
-      "20L Steel": "20 LTR STEEL બરણી: ₹3,520",
+      "1LTR JAR": "1LTR JAR",
+      "2LTR JAR": "2LTR JAR",
+      "5LTR PLASTIC JAR": "5LTR PLASTIC JAR",
+      "5LTR STEEL BARNI": "5LTR STEEL BARNI",
+      "10 LTR JAR": "10 LTR JAR",
+      "10 LTR STEEL": "10 LTR STEEL",
+      "20 LTR CARBO": "20 LTR CARBO",
+      "20 LTR CAN": "20 LTR CAN",
+      "20 LTR STEEL": "20 LTR STEEL",
     };
 
     setStockTaken((current) => {
@@ -528,6 +541,12 @@ useEffect(() => {
     return;
   }
 
+  // If upload still in progress, warn and prevent premature save
+  if (uploadingPhoto) {
+    toast.error('Please wait until photo upload completes');
+    return;
+  }
+
   const newCustomer = { ...customerInput };
   // attach scheme information if applicable
   // Detect if selected packaging is a predefined 1+1 combo
@@ -545,17 +564,12 @@ useEffect(() => {
   if (selectedVillageId) {
     try {
       const firestoreCustomer = { ...newCustomer };
-      // If upload still in progress, warn and prevent premature save
-      if (uploadingPhoto) {
-        toast.error('Please wait until photo upload completes');
-        setSubmitting(false);
-        return;
-      }
-      // Fallback: if photo URL not present but we have a preview (data URL), save preview
-      const photoToSave = firestoreCustomer.photo || firestoreCustomer.photoPreview || null;
+      // Only save the actual uploaded photo URL, not the preview data URL
+      const photoToSave = firestoreCustomer.photo || null;
       await addDoc(collection(db, "customers"), {
         ...firestoreCustomer,
         photo: photoToSave,
+        photoPreview: null, // Don't save preview to database
         villageId: selectedVillageId,
         createdAt: serverTimestamp(),
       });
@@ -703,16 +717,21 @@ useEffect(() => {
         rows.push(obj);
       });
 
-      // Map rows to normalized objects (adapt common header names)
+      // Map rows to normalized objects by POSITION (Column 1=Code, 2=Name, 4=Mobile)
       const normalizedData = rows
-        .map((r) => ({
-          code: (r.code || r.Code || r[Object.keys(r)[0]] || "")?.toString().trim(),
-          name: (r.name || r.Name || r[Object.keys(r)[1]] || "")?.toString().trim(),
-          mobile: (r.mobile || r.Mobile || r.phone || r.Phone || r[Object.keys(r)[3]] || "")?.toString().trim(),
-        }))
-        .filter((c) => c.name || c.code || c.mobile);
+        .map((r) => {
+          const keys = Object.keys(r);
+          return {
+            code: (r[keys[0]] || "")?.toString().trim(),           // Column 1: CODE
+            name: (r[keys[1]] || "")?.toString().trim(),           // Column 2: NAME
+            mobile: (r[keys[3]] || "")?.toString().trim(),         // Column 4: MOBILE
+          };
+        })
+        .filter((c) => c.code || c.name || c.mobile); // Accept if ANY field has data
 
-      if (!normalizedData.length) {
+      console.log("✅ Loaded", normalizedData.length, "customers from Excel");
+
+      if (normalizedData.length === 0) {
         toast.dismiss(toastId);
         toast.error("❌ No valid customer data found in Excel!");
         return;
@@ -721,6 +740,9 @@ useEffect(() => {
       // Update local state
       setExcelData((prev) => [...prev, ...normalizedData]);
       setCustomerData((prev) => [...prev, ...normalizedData]);
+
+      toast.dismiss(toastId);
+      toast.success(`✅ Successfully uploaded ${normalizedData.length} customers!`);
 
       // Firestore batch write
       const batch = writeBatch(db);
@@ -753,18 +775,16 @@ const handleCancelExcelUpload = () => {
 const [filteredCustomers, setFilteredCustomers] = useState([]);
 
 useEffect(() => {
-  if (!searchTerm) {
+  if (!searchTerm || !searchTerm.trim()) {
     setFilteredCustomers([]);
     return;
   }
 
-  const searchLower = searchTerm.toLowerCase(); // 👈 fix
+  const searchLower = searchTerm.toLowerCase().trim();
 
   const results = customerData
     .filter(c =>
-      (c.name || "").toLowerCase().includes(searchLower) ||
-      (c.mobile || "").toLowerCase().includes(searchLower) ||
-      (c.code || "").toLowerCase().includes(searchLower)
+      (c.code || "").toString().toLowerCase().includes(searchLower)
     )
     .slice(0, 5);
 
@@ -887,9 +907,18 @@ const handleEditCustomer = (customer) => {
     photo: customer.photo || null,
     schemeKey: customer.schemeKey || "",
     manualOffer: customer.manualOffer || "",
+    appliedPrice: customer.appliedPrice || "",
+    paymentMethod: customer.paymentMethod || "",
   });
 
   setEditingCustomerId(customer.id); // VERY IMPORTANT
+  
+  // Auto-scroll to customer form
+  if (customerFormRef.current) {
+    setTimeout(() => {
+      customerFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
 };
 
 
@@ -975,38 +1004,17 @@ const handleSelectExcelCustomer = (customer) => {
   };
 
   // PDF export
-  const handleExportExcel = async () => {
+  const handleExportDemoRegister = async () => {
     try {
       if (customers.length === 0) {
         toast.error("No customers to export");
         return;
       }
 
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Demo Register");
-
       const resolvedVillage = demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "-";
       const resolvedTaluka = demoInfo.taluka || "-";
       const resolvedMantri = demoInfo.mantri || "-";
       const resolvedDate = demoInfo.date || "-";
-
-      sheet.mergeCells("A1:H1");
-      sheet.getCell("A1").value = `Village: ${resolvedVillage}    Taluka: ${resolvedTaluka}`;
-      sheet.mergeCells("A2:H2");
-      sheet.getCell("A2").value = `Mantri: ${resolvedMantri}`;
-      sheet.mergeCells("A3:H3");
-      sheet.getCell("A3").value = `Date: ${resolvedDate}`;
-
-      sheet.addRow([]);
-      sheet.addRow([]);
-      sheet.addRow(["No", "Name", "Photo", "Mobile Number", "Receipt No", "Packaging", "Quantity", "Amount", "Date / Installment"]);
-      sheet.getRow(5).font = { bold: true };
-
-      const exportCustomers = [...customers];
-      const hasPending = (customerInput && (customerInput.name || customerInput.mobile || customerInput.code || customerInput.orderQty));
-      if (hasPending) exportCustomers.push({ ...customerInput });
-
-      let grandTotal = 0;
 
       const getBase64FromUrl = async (url) => {
         if (!url) return null;
@@ -1021,6 +1029,27 @@ const handleSelectExcelCustomer = (customer) => {
         });
       };
 
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Demo Register");
+
+      sheet.mergeCells("A1:H1");
+      sheet.getCell("A1").value = `Village: ${resolvedVillage}    Taluka: ${resolvedTaluka}`;
+      sheet.mergeCells("A2:H2");
+      sheet.getCell("A2").value = `Mantri: ${resolvedMantri}`;
+      sheet.mergeCells("A3:H3");
+      sheet.getCell("A3").value = `Date: ${resolvedDate}`;
+
+      sheet.addRow([]);
+      sheet.addRow([]);
+      sheet.addRow(["No", "Name", "Photo", "Mobile Number", "Receipt No", "Packaging", "Quantity", "Amount", "Payment Method", "Date / Installment"]);
+      sheet.getRow(5).font = { bold: true };
+
+      const exportCustomers = [...customers];
+      const hasPending = (customerInput && (customerInput.name || customerInput.mobile || customerInput.code || customerInput.orderQty));
+      if (hasPending) exportCustomers.push({ ...customerInput });
+
+      let grandTotal = 0;
+
       for (let i = 0; i < exportCustomers.length; i++) {
         const c = exportCustomers[i];
         const qty = parseInt(c.orderQty) || 0;
@@ -1028,13 +1057,12 @@ const handleSelectExcelCustomer = (customer) => {
         if (c.appliedPrice) {
           rate = parseInt(c.appliedPrice) || 0;
         } else {
-          const match = packagingOptions.find((opt) => opt.startsWith(c.orderPackaging));
-          rate = match ? parseInt((match.match(/₹\s*([\d,]+)/) || [])[1]?.replace(/,/g, "") || 0) : 0;
+          rate = getPriceByName(c.orderPackaging) || 0;
         }
         const total = rate * qty;
         grandTotal += total;
 
-        sheet.addRow([i + 1, c.name || "", "", c.mobile || "", c.code || "", c.orderPackaging || "", qty, total, demoInfo.date || ""]);
+        sheet.addRow([i + 1, c.name || "", "", c.mobile || "", c.code || "", c.orderPackaging || "", qty, total, c.paymentMethod || "", demoInfo.date || ""]);
         const rowNumber = sheet.lastRow.number;
         sheet.getRow(rowNumber).height = 60;
         try {
@@ -1061,6 +1089,97 @@ const handleSelectExcelCustomer = (customer) => {
 
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer]), `Demo_Register_${demoInfo.village || "export"}.xlsx`);
+      toast.success("✓ Demo Register exported successfully!");
+    } catch (err) {
+      console.error('Excel export failed:', err);
+      toast.error('❌ Excel export failed: ' + (err.message || err));
+    }
+  };
+
+  const handleExportMantriReport = async () => {
+    try {
+      const pavtiCustomers = customers.filter(c => c.paymentMethod === "PAVTI");
+      
+      if (pavtiCustomers.length === 0) {
+        toast.error("❌ No PAVTI customers found for Mantri report");
+        return;
+      }
+
+      const resolvedVillage = demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "-";
+      const resolvedTaluka = demoInfo.taluka || "-";
+      const resolvedMantri = demoInfo.mantri || "-";
+      const resolvedDate = demoInfo.date || "-";
+
+      const getBase64FromUrl = async (url) => {
+        if (!url) return null;
+        if (url.startsWith('data:')) return url.split(',')[1];
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Mantri Report");
+
+      sheet.mergeCells("A1:H1");
+      sheet.getCell("A1").value = `Village: ${resolvedVillage}    Taluka: ${resolvedTaluka}`;
+      sheet.mergeCells("A2:H2");
+      sheet.getCell("A2").value = `Mantri: ${resolvedMantri}`;
+      sheet.mergeCells("A3:H3");
+      sheet.getCell("A3").value = `Date: ${resolvedDate}`;
+
+      sheet.addRow([]);
+      sheet.addRow([]);
+      sheet.addRow(["No", "Name", "Photo", "Mobile Number", "Receipt No", "Packaging", "Quantity", "Amount", "Payment Method", "Date / Installment"]);
+      sheet.getRow(5).font = { bold: true };
+
+      let grandTotal = 0;
+
+      for (let i = 0; i < pavtiCustomers.length; i++) {
+        const c = pavtiCustomers[i];
+        const qty = parseInt(c.orderQty) || 0;
+        let rate = 0;
+        if (c.appliedPrice) {
+          rate = parseInt(c.appliedPrice) || 0;
+        } else {
+          rate = getPriceByName(c.orderPackaging) || 0;
+        }
+        const total = rate * qty;
+        grandTotal += total;
+
+        sheet.addRow([i + 1, c.name || "", "", c.mobile || "", c.code || "", c.orderPackaging || "", qty, total, c.paymentMethod || "", demoInfo.date || ""]);
+        const rowNumber = sheet.lastRow.number;
+        sheet.getRow(rowNumber).height = 60;
+        try {
+          if (c.photo) {
+            const base64 = await getBase64FromUrl(c.photo);
+            if (base64) {
+              const ext = c.photo.includes('png') ? 'png' : 'jpeg';
+              const imageId = workbook.addImage({ base64, extension: ext });
+              sheet.addImage(imageId, { tl: { col: 2, row: rowNumber - 1 }, ext: { width: 90, height: 60 } });
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to attach image for', c.name, err);
+        }
+      }
+
+      sheet.addRow([]);
+      sheet.addRow(["Total PAVTI Customers", pavtiCustomers.length]);
+      sheet.addRow(["Grand Total Amount", grandTotal]);
+
+      sheet.columns.forEach((col, idx) => {
+        if ((idx + 1) === 3) col.width = 15; else col.width = 22;
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), `Mantri_Report_${demoInfo.village || "export"}.xlsx`);
+      toast.success("✓ Mantri Report (PAVTI Only) exported successfully!");
     } catch (err) {
       console.error('Excel export failed:', err);
       toast.error('❌ Excel export failed: ' + (err.message || err));
@@ -1195,7 +1314,7 @@ const handleSelectExcelCustomer = (customer) => {
         const scheme = getOnePlusOneByKey(c.schemeKey);
         if (scheme && Array.isArray(scheme.parts)) {
           scheme.parts.forEach((part) => {
-            const match = packagingOptions.find((opt) =>
+            const match = packagingNames.find((opt) =>
               opt.toLowerCase().includes(part.toLowerCase())
             );
             const key = match || part;
@@ -1206,7 +1325,7 @@ const handleSelectExcelCustomer = (customer) => {
           sold[key] = (sold[key] || 0) + qty;
         }
       } else {
-        const match = packagingOptions.find((opt) => opt.startsWith(c.orderPackaging));
+        const match = packagingNames.find((opt) => opt.startsWith(c.orderPackaging));
         const key = match || c.orderPackaging || "Unknown";
         sold[key] = (sold[key] || 0) + qty;
       }
@@ -1223,7 +1342,7 @@ const handleSelectExcelCustomer = (customer) => {
       ...Object.keys(sold),
       ...stockTaken.map((s) => s.packaging),
       ...stockReturned.map((s) => s.packaging),
-      ...packagingOptions,
+      ...packagingNames,
     ]);
 
     const remainingList = Array.from(allKeys).map((k) => {
@@ -1265,9 +1384,9 @@ const villageName =
     salesSummary[c.orderPackaging] += qty;
   });
 
-  // Group stock by packaging
+  // Group stock at dairy by packaging (only dairy stock)
   const stockSummary = {};
-  stockTaken.forEach(s => {
+  stockAtDairy.forEach(s => {
     if (!s.packaging || !s.quantity) return;
     const qty = parseInt(s.quantity) || 0;
     if (!stockSummary[s.packaging]) stockSummary[s.packaging] = 0;
@@ -1302,18 +1421,12 @@ const villageName =
   // Grand total litres
   const grandTotalLitres =
     customers.reduce((acc, c) => {
-      const match = packagingOptions.find(opt => opt.startsWith(c.orderPackaging));
-      if (!match) return acc;
-      const litreMatch = match.match(/(\d+)/);
-      const litres = litreMatch ? parseInt(litreMatch[1]) : 0;
+      const litres = getLitresByName(c.orderPackaging) || 0;
       const qty = parseInt(c.orderQty) || 0;
       return acc + litres * qty;
     }, 0) +
     stockTaken.reduce((acc, s) => {
-      const match = packagingOptions.find(opt => opt.startsWith(s.packaging));
-      if (!match) return acc;
-      const litreMatch = match.match(/(\d+)/);
-      const litres = litreMatch ? parseInt(litreMatch[1]) : 0;
+      const litres = getLitresByName(s.packaging) || 0;
       const qty = parseInt(s.quantity) || 0;
       return acc + litres * qty;
     }, 0);
@@ -1337,31 +1450,28 @@ ${paymentLines || "—"}
 
   setWASummary(summaryText);
 };
-   
-
   const currentTotal = (() => {
     const qty = parseInt(customerInput.orderQty) || 0;
+    if (qty === 0 || !customerInput.orderPackaging) return 0;
+    
     // If packaging matches a predefined 1+1 combo, use its offer price
     const schemeByPack = onePlusOneSchemes.find((s) => s.label === customerInput.orderPackaging);
     if (schemeByPack) {
       return (schemeByPack.offer || schemeByPack.base || 0) * qty;
     }
+    
     // If a manual offer is provided per-customer, use that
     const manual = parseInt(customerInput.manualOffer || "") || 0;
     if (manual > 0) return manual * qty;
-    if (!customerInput.orderPackaging) return 0;
-    const match = packagingOptions.find((opt) => opt.startsWith(customerInput.orderPackaging));
-    if (!match) return 0;
-    // Robustly extract the rupee amount using regex
-    const priceMatch = match.match(/₹\s*([\d,]+)/) || match.match(/([\d,]+)\s*₹/) || match.match(/([\d,]+)$/);
-    let price = 0;
-    if (priceMatch && priceMatch[1]) {
-      price = parseInt(priceMatch[1].replace(/,/g, "")) || 0;
-    } else {
-      // fallback: try to extract any number
-      const anyNum = match.match(/([\d,]+)/);
-      price = anyNum ? parseInt(anyNum[1].replace(/,/g, "")) || 0 : 0;
+    
+    // Get price from packaging config
+    const price = getPriceByName(customerInput.orderPackaging);
+    
+    // Debug: log if price is 0 to help identify issues
+    if (!price) {
+      console.warn(`Price not found for packaging: "${customerInput.orderPackaging}"`);
     }
+    
     return price * qty;
   })();
 
@@ -1442,59 +1552,20 @@ ${paymentLines || "—"}
                 />
               </div>
 
+            {/* Village Selection with Search */}
+            <VillageSelector
+              villageOptions={villageOptions}
+              selectedVillageId={selectedVillageId}
+              onVillageChange={(id) => {
+                setSelectedVillageId(id);
+                const found = villageOptions.find(v => v.id === id);
+                setDemoInfo(prev => ({ ...prev, village: found ? found.name : "" }));
+              }}
+              label="Village*"
+              showLabel={true}
+            />
 
-            <div>
-              <label>Village*</label>
-              <select value={selectedVillageId} onChange={handleVillageSelect}>
-                <option value="">Select Village</option>
-                {villageOptions.map(v => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                placeholder="Add new village"
-                value={newVillageName || ''}
-                onChange={e => setNewVillageName(e.target.value)}
-                style={{marginLeft: 8, marginRight: 6, padding: '4px 8px', borderRadius: 6, border: '1px solid #b6c7e6'}}
-              />
-              <button
-                type="button"
-                style={{ padding: '4px 12px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', fontWeight: 600 }}
-                onClick={async () => {
-                  if (!newVillageName || !newVillageName.trim()) {
-                    alert('Please enter a village name.');
-                    return;
-                  }
-                  try {
-                    
-                    const docRef = await addDoc(collection(db, 'villages'), {
-                      name: newVillageName.trim(),
-                      createdAt: new Date(),
-                    });
-                    setNewVillageName('');
-                    setSelectedVillageId(docRef.id);
-                  } catch (err) {
-                    alert('Error saving village: ' + err.message);
-                  }
-                }}
-              >
-                Add Village
-              </button>
-
-              {/* Scheme specific controls */}
-              {/* demo-level scheme selectors removed — use per-customer fields below */}
-
-              <div>
-  <label>Taluka</label>
-  <input
-    name="taluka"
-    value={demoInfo.taluka}
-    onChange={handleDemoInfoChange}
-  />
-</div>
-
-              <div>
+            <div>              <div>
                 <label>Mantri*</label>
                 <input
                   name="mantri"
@@ -1631,7 +1702,7 @@ ${paymentLines || "—"}
                   }}
                 >
                   <option value="">-- Select Packaging --</option>
-                  {packagingOptions.map((opt) => (
+                  {packagingNames.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
@@ -1807,6 +1878,7 @@ ${paymentLines || "—"}
 
           {/* Customer Section */}
           <div
+            ref={customerFormRef}
             className="section-card"
             style={{
               marginBottom: 24,
@@ -1861,19 +1933,18 @@ ${paymentLines || "—"}
     className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
   />
 
-  {/* Dropdown Suggestions */}
-  {/* Dropdown Suggestions */}
-{/* Dropdown Suggestions */}
+  {/* Dropdown Suggestions - Max 5 Results */}
 {filteredCustomers.length > 0 && (
   <ul
-    className="absolute z-20 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-72 overflow-y-auto"
+    className="absolute z-20 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 overflow-y-auto"
     style={{
       padding: 0,
       listStyle: "none",
       fontSize: "1rem",
+      maxHeight: "280px",
     }}
   >
-  {filteredCustomers.map((cust, idx) => (
+  {filteredCustomers.slice(0, 5).map((cust, idx) => (
   <li
     key={idx}
     onClick={() => {
@@ -1889,15 +1960,23 @@ ${paymentLines || "—"}
       setSearchTerm(cust.name); // optional: keep searchTerm synced
       setFilteredCustomers([]);
     }}
-    className="flex justify-between items-center cursor-pointer px-4 py-3 hover:bg-blue-100 hover:text-blue-800 transition-colors duration-150"
+    className="flex flex-col cursor-pointer px-4 py-3 hover:bg-blue-100 hover:text-blue-800 transition-colors duration-150 border-b border-gray-200 last:border-b-0"
   >
-    <div style={{ fontWeight: 600 }}>{cust.name}</div>
+    <div style={{ fontWeight: 600, color: "#1f2937" }}>📋 {cust.name}</div>
+    <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "4px" }}>
+      📞 {cust.mobile || "N/A"}
+    </div>
     <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-      {cust.code} | {cust.mobile}
+      🔖 {cust.code || "N/A"}
     </div>
   </li>
 ))}
 
+  {filteredCustomers.length > 5 && (
+    <li style={{ padding: "8px 4px", textAlign: "center", color: "#9ca3af", fontSize: "0.85rem" }}>
+      ... {filteredCustomers.length - 5} more results
+    </li>
+  )}
   </ul>
 )}
 
@@ -1962,7 +2041,7 @@ ${paymentLines || "—"}
                     }
                   >
                     <option value="">Select Packaging</option>
-                    {packagingOptions.map((opt) => (
+                    {packagingNames.map((opt) => (
                       <option key={opt} value={opt}>
                         {opt}
                       </option>
@@ -2014,6 +2093,33 @@ ${paymentLines || "—"}
                     placeholder="ટિપ્પણી દાખલ કરો"
                   />
                 </div>
+
+                <div style={{ flex: 1, minWidth: 150 }}>
+                  <label>Payment Method</label>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="PAVTI"
+                        checked={customerInput.paymentMethod === 'PAVTI'}
+                        onChange={handleCustomerInput}
+                      />
+                      <span>PAVTI</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="CASH"
+                        checked={customerInput.paymentMethod === 'CASH'}
+                        onChange={handleCustomerInput}
+                      />
+                      <span>CASH</span>
+                    </label>
+                  </div>
+                </div>
+
                 <div style={{ minWidth: 180 }}>
                   <label>Photo</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2120,6 +2226,7 @@ ${paymentLines || "—"}
                       <th>Qty</th>
                       <th>Total</th>
                       <th>Remarks</th>
+                      <th>Payment Method</th>
                       <th>Entry By</th>
                       <th>Edit</th>
                       <th>Remove</th>
@@ -2132,8 +2239,7 @@ ${paymentLines || "—"}
                       if (c.appliedPrice) {
                         rate = parseInt(c.appliedPrice) || 0;
                       } else {
-                        const match = packagingOptions.find((opt) => opt.startsWith(c.orderPackaging));
-                        rate = match ? parseInt((match.match(/₹\s*([\d,]+)/) || [])[1]?.replace(/,/g, "") || 0) : 0;
+                        rate = getPriceByName(c.orderPackaging) || 0;
                       }
                       const total = rate * qty;
 
@@ -2159,6 +2265,7 @@ ${paymentLines || "—"}
                             <strong>₹{total}</strong>
                           </td>
                           <td>{c.remarks}</td>
+                          <td style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || '—'}</td>
                           <td style={{color:'#2563eb', fontWeight:600}}>{c.addedBy || demoInfo.entryBy || ''}</td>
                           <td>
                          <button
@@ -2188,14 +2295,7 @@ ${paymentLines || "—"}
                       <td colSpan="11" style={{ textAlign: "right", fontWeight: "bold" }}>
                         Grand Total: ₹
                         {customers.reduce((acc, c) => {
-                          const match = packagingOptions.find((opt) =>
-                            opt.startsWith(c.orderPackaging)
-                          );
-                          let rate = 0;
-                          if (match) {
-                            const priceMatch = match.match(/₹\s*([\d,]+)/);
-                            rate = priceMatch ? parseInt(priceMatch[1].replace(/,/g, "")) : 0;
-                          }
+                          const rate = getPriceByName(c.orderPackaging) || 0;
                           const qty = parseInt(c.orderQty) || 0;
                           return acc + rate * qty;
                         }, 0)}
@@ -2230,7 +2330,7 @@ ${paymentLines || "—"}
                   onChange={(e) => setStockInput({ ...stockInput, packaging: e.target.value })}
                 >
                   <option value="">Select Packaging</option>
-                  {packagingOptions.map((opt) => (
+                  {packagingNames.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -2331,10 +2431,7 @@ ${paymentLines || "—"}
                     Grand Total Stock Value: ₹
                     {stockAtDairy.reduce((acc, s) => {
                       if (!s.packaging) return acc;
-                      const match = packagingOptions.find((opt) => opt.startsWith(s.packaging));
-                      if (!match) return acc;
-                      const price =
-                        parseInt(match.match(/₹([\d,]+)/)?.[1].replace(/,/g, "")) || 0;
+                      const price = getPriceByName(s.packaging) || 0;
                       const qty = parseInt(s.quantity) || 0;
                       return acc + price * qty;
                     }, 0)}
@@ -2391,7 +2488,7 @@ ${paymentLines || "—"}
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
                 <select name="packaging" value={returnedStockInput.packaging} onChange={handleReturnedStockInput} style={{ padding: '8px', borderRadius: 6, minWidth: 150 }}>
                   <option value="">Select Packaging</option>
-                  {packagingOptions.map((opt) => (
+                  {packagingNames.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
@@ -2921,35 +3018,67 @@ ${paymentLines || "—"}
               </p>
             </div>
 
-            <button
-              type="button"
-              className="btn-outline"
-              style={{
-                padding: "14px 32px",
-                fontWeight: 800,
-                fontSize: "1.1em",
-                borderRadius: 10,
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                transition: "all 0.3s",
-                boxShadow: "0 4px 12px #10b98144",
-                minWidth: 200,
-                letterSpacing: "0.03em"
-              }}
-              onClick={handleExportExcel}
-              onMouseOver={(e) => {
-                e.target.style.transform = "translateY(-3px)";
-                e.target.style.boxShadow = "0 8px 20px #10b98155";
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = "translateY(0)";
-                e.target.style.boxShadow = "0 4px 12px #10b98144";
-              }}
-            >
-              📊 Export to Excel
-            </button>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn-outline"
+                style={{
+                  padding: "14px 32px",
+                  fontWeight: 800,
+                  fontSize: "1.1em",
+                  borderRadius: 10,
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.3s",
+                  boxShadow: "0 4px 12px #10b98144",
+                  minWidth: 200,
+                  letterSpacing: "0.03em"
+                }}
+                onClick={handleExportDemoRegister}
+                onMouseOver={(e) => {
+                  e.target.style.transform = "translateY(-3px)";
+                  e.target.style.boxShadow = "0 8px 20px #10b98155";
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "0 4px 12px #10b98144";
+                }}
+              >
+                📊 Export Demo Register
+              </button>
+
+              <button
+                type="button"
+                className="btn-outline"
+                style={{
+                  padding: "14px 32px",
+                  fontWeight: 800,
+                  fontSize: "1.1em",
+                  borderRadius: 10,
+                  background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.3s",
+                  boxShadow: "0 4px 12px #8b5cf644",
+                  minWidth: 200,
+                  letterSpacing: "0.03em"
+                }}
+                onClick={handleExportMantriReport}
+                onMouseOver={(e) => {
+                  e.target.style.transform = "translateY(-3px)";
+                  e.target.style.boxShadow = "0 8px 20px #8b5cf655";
+                }}
+                onMouseOut={(e) => {
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "0 4px 12px #8b5cf644";
+                }}
+              >
+                👨 Export Mantri Report (PAVTI Only)
+              </button>
+            </div>
 
             <button
               type="button"
