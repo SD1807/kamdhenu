@@ -302,7 +302,7 @@ useEffect(() => {
     setCustomerInput((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Compress image to reduce file size for Firebase
+  // Aggressively compress image to reduce file size for Firebase (max 500KB base64)
   const compressImage = (base64String) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -312,9 +312,9 @@ useEffect(() => {
         let width = img.width;
         let height = img.height;
         
-        // Reduce dimensions if image is too large
-        const maxWidth = 800;
-        const maxHeight = 800;
+        // Aggressively reduce dimensions to max 600x600
+        const maxWidth = 600;
+        const maxHeight = 600;
         if (width > maxWidth || height > maxHeight) {
           const ratio = Math.min(maxWidth / width, maxHeight / height);
           width = Math.round(width * ratio);
@@ -326,11 +326,22 @@ useEffect(() => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Convert to JPEG with quality 0.7 to further reduce size
-        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+        // Convert to JPEG with quality 0.5 (50%) for aggressive compression
+        let compressed = canvas.toDataURL('image/jpeg', 0.5);
+        
+        // If still too large, reduce quality further
+        let quality = 0.5;
+        while (compressed.length > 500000 && quality > 0.2) {
+          quality -= 0.1;
+          compressed = canvas.toDataURL('image/jpeg', quality);
+        }
+        
         resolve(compressed);
       };
-      img.onerror = () => resolve(base64String);
+      img.onerror = () => {
+        // If image fails to load, return empty string instead of original
+        resolve('');
+      };
     });
   };
 
@@ -361,9 +372,15 @@ useEffect(() => {
           // Compress the image before storing
           const compressedBase64 = await compressImage(base64String);
           
+          if (!compressedBase64) {
+            toast.error("Failed to compress image. Please try a different photo.");
+            setUploadingPhoto(false);
+            return;
+          }
+          
           // Verify compressed size is reasonable
-          if (compressedBase64.length > 900000) {
-            toast.warning("Image still large after compression, may cause issues");
+          if (compressedBase64.length > 400000) {
+            toast.warning(`Image compressed to ${Math.round(compressedBase64.length / 1000)}KB - may have quality issues`);
           }
           
           // Store compressed base64 in state
@@ -373,7 +390,7 @@ useEffect(() => {
             photoPreview: compressedBase64
           }));
           setUploadingPhoto(false);
-          toast.success("Photo loaded and compressed successfully");
+          toast.success(`Photo loaded and compressed to ${Math.round(compressedBase64.length / 1000)}KB`);
         } catch (compressErr) {
           console.error("Compression error:", compressErr);
           setUploadingPhoto(false);
