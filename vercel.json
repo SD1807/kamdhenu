@@ -1,7 +1,7 @@
- {
-  "buildCommand": "npm install && npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "devCommand": "npm run dev",
+{
+  "buildCommand": "cd Internalsoftware-main && npm run build",
+  "outputDirectory": "Internalsoftware-main/dist",
+  "installCommand": "cd Internalsoftware-main && npm install",
+  "devCommand": "cd Internalsoftware-main && npm run dev",
   "framework": "vite"
 }
