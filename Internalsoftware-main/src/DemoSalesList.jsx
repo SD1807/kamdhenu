@@ -15,6 +15,7 @@ import { deleteDoc, updateDoc } from "firebase/firestore";
 import ExcelJS from "exceljs";
 import { VillageSelector } from "./components/stock/VillageSelector";
 import { PACKAGING_DATA, getPriceByName, getPackagingNames, getLitresByName } from "./config/packagingConfig";
+import { compressImage, getBase64SizeInMB } from "./imageCompressionUtils";
 
 // Get packaging names array for dropdown display (without prices)
 const packagingNames = getPackagingNames();
@@ -351,69 +352,46 @@ useEffect(() => {
     });
   };
 
-  const handleCustomerPhotoChange = (e) => {
+  const handleCustomerPhotoChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    // Validate file
-    const maxSizeInMB = 5;
-    if (file.size > maxSizeInMB * 1024 * 1024) {
-      toast.error(`File size must be less than ${maxSizeInMB}MB`);
-      return;
-    }
-
+    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error("Please select a valid image file");
       return;
     }
 
-    // Convert to base64 and compress before storing
+    // Check original file size
+    const originalSizeInMB = file.size / (1024 * 1024);
+    if (originalSizeInMB > 10) {
+      toast.error("Original file size is too large (>10MB). Please select a smaller image.");
+      return;
+    }
+
     try {
       setUploadingPhoto(true);
       
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64String = reader.result;
-          // Compress the image before storing
-          const compressedBase64 = await compressImage(base64String);
-          
-          if (!compressedBase64) {
-            toast.error("Failed to compress image. Please try a different photo.");
-            setUploadingPhoto(false);
-            return;
-          }
-          
-          const sizeKB = Math.round(compressedBase64.length / 1000);
-          
-          // Verify compressed size is safe for Firebase
-          if (sizeKB > 200) {
-            toast.warning(`Image compressed to ${sizeKB}KB - Firebase safe limit is ~250KB`);
-          }
-          
-          // Store compressed base64 in state
-          setCustomerInput((prev) => ({ 
-            ...prev, 
-            photo: compressedBase64,
-            photoPreview: compressedBase64
-          }));
-          setUploadingPhoto(false);
-          toast.success(`Photo loaded and compressed to ${sizeKB}KB ✓`);
-        } catch (compressErr) {
-          console.error("Compression error:", compressErr);
-          setUploadingPhoto(false);
-          toast.error("Photo compression failed");
-        }
-      };
-      reader.onerror = () => {
-        setUploadingPhoto(false);
-        toast.error("Failed to read photo file");
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error("Error processing photo:", err);
+      // Compress the image
+      console.log(`Compressing image: ${file.name} (${originalSizeInMB.toFixed(2)}MB)`);
+      const compressedBase64 = await compressImage(file, 1200, 1200, 0.8);
+      const compressedSizeInMB = getBase64SizeInMB(compressedBase64);
+      
+      console.log(`✅ Image compressed successfully: ${compressedSizeInMB.toFixed(2)}MB (from ${originalSizeInMB.toFixed(2)}MB)`);
+      
+      // Store compressed base64 in state
+      setCustomerInput(prev => ({ 
+        ...prev, 
+        photo: compressedBase64,
+        photoPreview: compressedBase64
+      }));
+      
       setUploadingPhoto(false);
-      toast.error("Photo processing failed: " + (err.message || err));
+      toast.success(`Photo loaded and compressed to ${(compressedSizeInMB * 1024).toFixed(0)}KB ✓`);
+    } catch (err) {
+      console.error('Error processing photo:', err);
+      setUploadingPhoto(false);
+      toast.error('Photo processing failed: ' + (err.message || err));
     }
   };
 

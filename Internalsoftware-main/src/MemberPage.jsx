@@ -17,6 +17,7 @@ import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
 import { VillageSelector } from "./components/stock/VillageSelector";
 import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
+import { compressImage, getBase64SizeInMB } from "./imageCompressionUtils";
 
 export default function MemberPage() {
   const [villages, setVillages] = useState([]);
@@ -93,39 +94,38 @@ export default function MemberPage() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    // Validate file
-    const maxSizeInMB = 5;
-    if (file.size > maxSizeInMB * 1024 * 1024) {
-      alert(`File size must be less than ${maxSizeInMB}MB`);
-      return;
-    }
-
+    // Validate file type
     if (!file.type.startsWith('image/')) {
       alert("Please select a valid image file");
       return;
     }
 
-    // Convert to base64 and store locally (no Firebase Storage needed)
+    // Check original file size
+    const originalSizeInMB = file.size / (1024 * 1024);
+    if (originalSizeInMB > 10) {
+      alert("Original file size is too large (>10MB). Please select a smaller image.");
+      return;
+    }
+
     try {
       setUploadingPhoto(true);
       
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result;
-        // Store base64 directly in state - will be saved to Firestore
-        setCustomerInput(prev => ({ 
-          ...prev, 
-          photo: base64String,
-          photoPreview: base64String
-        }));
-        setUploadingPhoto(false);
-        alert('Photo loaded successfully');
-      };
-      reader.onerror = () => {
-        setUploadingPhoto(false);
-        alert('Failed to read photo file');
-      };
-      reader.readAsDataURL(file);
+      // Compress the image
+      console.log(`Compressing image: ${file.name} (${originalSizeInMB.toFixed(2)}MB)`);
+      const compressedBase64 = await compressImage(file, 1200, 1200, 0.8);
+      const compressedSizeInMB = getBase64SizeInMB(compressedBase64);
+      
+      console.log(`✅ Image compressed successfully: ${compressedSizeInMB.toFixed(2)}MB (from ${originalSizeInMB.toFixed(2)}MB)`);
+      
+      // Store compressed base64 in state - will be saved to Firestore
+      setCustomerInput(prev => ({ 
+        ...prev, 
+        photo: compressedBase64,
+        photoPreview: compressedBase64
+      }));
+      
+      setUploadingPhoto(false);
+      alert(`Photo loaded and compressed successfully!\nSize: ${compressedSizeInMB.toFixed(2)}MB`);
     } catch (err) {
       console.error('Error processing photo:', err);
       setUploadingPhoto(false);
