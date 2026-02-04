@@ -1993,65 +1993,121 @@ ${paymentLines || "—"}
             </div>
 
             {/* Search & Select customer */}
-           {/* Search Input */}
-<div className="relative w-full max-w-md">
-  <input
-    type="text"
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-    placeholder="Search customer..."
-    className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-  />
+            <div style={{ position: "relative", width: "100%", maxWidth: "500px" }}>
+              <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
+                <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search customer by name, mobile, code..."
+                  style={{
+                    width: "100%",
+                    padding: "12px 12px 12px 40px",
+                    borderRadius: 8,
+                    border: "2px solid #e0e7ff",
+                    fontSize: "0.95em",
+                    transition: "all 0.2s",
+                    boxShadow: searchTerm ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
+                    borderColor: searchTerm ? "#2563eb" : "#e0e7ff"
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#2563eb";
+                    e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
+                  }}
+                  onBlur={(e) => {
+                    if (!searchTerm) {
+                      e.target.style.borderColor = "#e0e7ff";
+                      e.target.style.boxShadow = "none";
+                    }
+                  }}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      background: "none",
+                      border: "none",
+                      fontSize: "1.1em",
+                      cursor: "pointer",
+                      color: "#9ca3af",
+                      padding: "4px 8px",
+                      transition: "color 0.2s"
+                    }}
+                    onMouseOver={(e) => e.target.style.color = "#2563eb"}
+                    onMouseOut={(e) => e.target.style.color = "#9ca3af"}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
-  {/* Dropdown Suggestions - Max 5 Results */}
-{filteredCustomers.length > 0 && (
-  <ul
-    className="absolute z-20 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 overflow-y-auto"
-    style={{
-      padding: 0,
-      listStyle: "none",
-      fontSize: "1rem",
-      maxHeight: "280px",
-    }}
-  >
-  {filteredCustomers.slice(0, 5).map((cust, idx) => (
-  <li
-    key={idx}
-    onClick={() => {
-     if (!editingCustomerId) {
-  setCustomerInput((prev) => ({
-    ...prev,
-    name: cust.name || "",
-    code: cust.code || "",
-    mobile: cust.mobile || "",
-  }));
-}
-
-      setSearchTerm(cust.name); // optional: keep searchTerm synced
-      setFilteredCustomers([]);
-    }}
-    className="flex flex-col cursor-pointer px-4 py-3 hover:bg-blue-100 hover:text-blue-800 transition-colors duration-150 border-b border-gray-200 last:border-b-0"
-  >
-    <div style={{ fontWeight: 600, color: "#1f2937" }}>📋 {cust.name}</div>
-    <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "4px" }}>
-      📞 {cust.mobile || "N/A"}
-    </div>
-    <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-      🔖 {cust.code || "N/A"}
-    </div>
-  </li>
-))}
-
-  {filteredCustomers.length > 5 && (
-    <li style={{ padding: "8px 4px", textAlign: "center", color: "#9ca3af", fontSize: "0.85rem" }}>
-      ... {filteredCustomers.length - 5} more results
-    </li>
-  )}
-  </ul>
-)}
-
-
-</div>
+              {filteredCustomers.length > 0 && (
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: "8px 0",
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    marginTop: 8,
+                    background: "#fff",
+                    borderRadius: 8,
+                    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.2)",
+                    border: "1px solid #e0e7ff",
+                    position: "relative",
+                    zIndex: 20
+                  }}
+                >
+                  {filteredCustomers.slice(0, 6).map((cust, idx) => (
+                    <li
+                      key={idx}
+                      onClick={() => {
+                        if (!editingCustomerId) {
+                          setCustomerInput((prev) => ({
+                            ...prev,
+                            name: cust.name || "",
+                            code: cust.code || "",
+                            mobile: cust.mobile || "",
+                          }));
+                        }
+                        setSearchTerm(cust.name);
+                        setFilteredCustomers([]);
+                      }}
+                      style={{
+                        padding: "12px 16px",
+                        cursor: "pointer",
+                        borderBottom: idx < Math.min(filteredCustomers.length - 1, 5) ? "1px solid #f0f0f0" : "none",
+                        transition: "all 0.15s",
+                        background: "#fff"
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "#f0f7ff";
+                        e.currentTarget.style.paddingLeft = "20px";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = "#fff";
+                        e.currentTarget.style.paddingLeft = "16px";
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#1f2937", fontSize: "0.95em" }}>📋 {cust.name}</div>
+                          <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 2 }}>📱 {cust.mobile || "N/A"} {cust.code && `• Code: ${cust.code}`}</div>
+                        </div>
+                        <div style={{ color: "#2563eb", fontSize: "1em" }}>→</div>
+                      </div>
+                    </li>
+                  ))}
+                  {filteredCustomers.length > 6 && (
+                    <li style={{ padding: "8px 16px", textAlign: "center", color: "#9ca3af", fontSize: "0.85em", borderTop: "1px solid #f0f0f0" }}>
+                      ... {filteredCustomers.length - 6} more results
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
 
 
      
@@ -2066,7 +2122,7 @@ ${paymentLines || "—"}
                 borderRadius: 8,
               }}
             >
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 120 }}>
                   <label>Customer Name</label>
                 <input
@@ -2149,11 +2205,11 @@ ${paymentLines || "—"}
                   />
                 </div>
 
-                <div style={{ marginTop: "10px", fontWeight: "bold" }}>
+                <div style={{ marginTop: "10px", fontWeight: "bold", gridColumn: "1 / -1" }}>
                   Customer Total: ₹{currentTotal}
                 </div>
 
-                <div style={{ flex: 2, minWidth: 120 }}>
+                <div style={{ flex: 2, minWidth: 120, gridColumn: "1 / -1" }}>
                   <label>Remarks</label>
                   <input
                     name="remarks"
@@ -2164,7 +2220,7 @@ ${paymentLines || "—"}
                   />
                 </div>
 
-                <div style={{ flex: 1, minWidth: 150 }}>
+                <div style={{ flex: 1, minWidth: 150, gridColumn: "1 / -1" }}>
                   <label>Payment Method</label>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -2190,10 +2246,10 @@ ${paymentLines || "—"}
                   </div>
                 </div>
 
-                <div style={{ minWidth: 180 }}>
+                <div style={{ minWidth: 180, gridColumn: "1 / -1" }}>
                   <label>Photo</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <select value={photoCapture} onChange={(e) => setPhotoCapture(e.target.value)} style={{ padding: '6px', borderRadius: 6 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: "wrap" }}>
+                    <select value={photoCapture} onChange={(e) => setPhotoCapture(e.target.value)} style={{ padding: '6px', borderRadius: 6, flex: 1, minWidth: 150 }}>
                       <option value="environment">Back Camera (recommended)</option>
                       <option value="user">Front Camera</option>
                     </select>
@@ -2202,6 +2258,7 @@ ${paymentLines || "—"}
                       accept="image/*"
                       capture={photoCapture}
                       onChange={handleCustomerPhotoChange}
+                      style={{ flex: 1, minWidth: 150 }}
                     />
                   </div>
                   {(customerInput.photo || customerInput.photoPreview) && (
@@ -2213,27 +2270,30 @@ ${paymentLines || "—"}
                     </div>
                   )}
                 </div>
-<button
-                type="button"
-                    className="btn-outline"
-                    style={{
-                      padding: "8px 8px",
-                      fontWeight: 800,
-                      fontSize: "1em",
-                      borderRadius: 8,
-                      height: "40px",
-                      background: "#2563eb",
-                      color: "#fff",
-                      border: "none",
-                    }}> Send OTP
-</button>
+
+                <button
+                  type="button"
+                  className="btn-outline"
+                  style={{
+                    padding: "8px 8px",
+                    fontWeight: 800,
+                    fontSize: "1em",
+                    borderRadius: 8,
+                    height: "40px",
+                    background: "#2563eb",
+                    color: "#fff",
+                    border: "none",
+                  }}
+                > Send OTP
+                </button>
 
                 <div
                   style={{
-                    alignSelf: "flex-end",
                     minWidth: 120,
                     display: "flex",
                     gap: 8,
+                    gridColumn: "1 / -1",
+                    flexWrap: "wrap"
                   }}
                 >
 
@@ -2242,6 +2302,7 @@ ${paymentLines || "—"}
   onClick={editingCustomerId ? handleUpdateCustomer : addCustomer}
   disabled={uploadingPhoto}
   title={uploadingPhoto ? 'Wait for photo upload' : ''}
+  style={{ flex: 1, minWidth: 120 }}
 >
   {uploadingPhoto ? 'Uploading...' : (editingCustomerId ? 'Update Customer' : 'Add Customer')}
 </button>
@@ -2259,6 +2320,8 @@ ${paymentLines || "—"}
       border: "none",
       borderRadius: 8,
       padding: "8px 18px",
+      flex: 1,
+      minWidth: 120
     }}
     onClick={() => {
       setEditingCustomerId(null);
@@ -2273,106 +2336,239 @@ ${paymentLines || "—"}
               </div>
             </div>
 
-            {/* Customer List */}
+            {/* Customer List - Responsive */}
             {customers.length > 0 && (
-              <div style={{ marginTop: 18, overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    textAlign: "center",
-                    background: "#fff",
-                    borderRadius: 8,
-                    boxShadow: "0 1px 6px #2563eb11",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#f7fafd", fontWeight: 700, color: "#174ea6" }}>
-                      <th>Name</th>
-                      <th>Photo</th>
-                      <th>Code</th>
-                      <th>Mobile</th>
-                      <th>Packaging</th>
-                      <th>Qty</th>
-                      <th>Total</th>
-                      <th>Remarks</th>
-                      <th>Payment Method</th>
-                      <th>Entry By</th>
-                      <th>Edit</th>
-                      <th>Remove</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers.map((c, idx) => {
-                      const qty = parseInt(c.orderQty) || 0;
-                      let rate = 0;
-                      if (c.appliedPrice) {
-                        rate = parseInt(c.appliedPrice) || 0;
-                      } else {
-                        rate = getPriceByName(c.orderPackaging) || 0;
-                      }
-                      const total = rate * qty;
+              <div style={{ marginTop: 18 }}>
+                <style>{`
+                  @media (min-width: 768px) {
+                    .demo-sales-desktop-table { display: block !important; }
+                  }
+                `}</style>
+                {/* Desktop Table */}
+                <div className="demo-sales-desktop-table" style={{ display: "none", overflowX: "auto" }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      textAlign: "center",
+                      background: "#fff",
+                      borderRadius: 8,
+                      boxShadow: "0 1px 6px #2563eb11",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f7fafd", fontWeight: 700, color: "#174ea6" }}>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Name</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Photo</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Code</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Mobile</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Packaging</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Qty</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Total</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Remarks</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Payment</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Entry By</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Edit</th>
+                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Remove</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customers.map((c, idx) => {
+                        const qty = parseInt(c.orderQty) || 0;
+                        let rate = 0;
+                        if (c.appliedPrice) {
+                          rate = parseInt(c.appliedPrice) || 0;
+                        } else {
+                          rate = getPriceByName(c.orderPackaging) || 0;
+                        }
+                        const total = rate * qty;
 
-                      return (
-                        <tr
-                          key={idx}
-                          className="customer-entry"
-                          style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
-                        >
-                          <td>{c.name}</td>
-                          <td>
+                        return (
+                          <tr
+                            key={idx}
+                            className="customer-entry"
+                            style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff", fontSize: "0.9em" }}
+                          >
+                            <td style={{ padding: "6px 4px" }}>{c.name}</td>
+                            <td style={{ padding: "6px 4px" }}>
+                              {c.photo ? (
+                                <img src={c.photo} alt="thumb" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />
+                              ) : (
+                                <span style={{ color: '#9ca3af' }}>—</span>
+                              )}
+                            </td>
+                            <td style={{ padding: "6px 4px" }}>{c.code}</td>
+                            <td style={{ padding: "6px 4px" }}>{c.mobile}</td>
+                            <td style={{ padding: "6px 4px" }}>{c.orderPackaging}</td>
+                            <td style={{ padding: "6px 4px" }}>{c.orderQty}</td>
+                            <td style={{ padding: "6px 4px" }}>
+                              <strong>₹{total}</strong>
+                            </td>
+                            <td style={{ padding: "6px 4px" }}>{c.remarks}</td>
+                            <td style={{ padding: "6px 4px", fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || '—'}</td>
+                            <td style={{ padding: "6px 4px", color:'#2563eb', fontWeight:600, fontSize: "0.85em" }}>{c.addedBy || demoInfo.entryBy || ''}</td>
+                            <td style={{ padding: "6px 4px" }}>
+                              <button
+                                type="button"
+                                style={{ background: "#2563eb", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: "0.8em" }}
+                                onClick={() => handleEditCustomer(c)}
+                              >
+                                Edit
+                              </button>
+                            </td>
+                            <td style={{ padding: "6px 4px" }}>
+                              <button
+                                type="button"
+                                style={{ background: "red", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: "0.8em" }}
+                                onClick={() => handleRemoveCustomer(c.id)}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr style={{ fontWeight: "bold", background: "#f7fafd" }}>
+                        <td colSpan="6" style={{ padding: "12px 8px", textAlign: "right" }}>Grand Total:</td>
+                        <td style={{ padding: "12px 8px", color: "#2563eb" }}>
+                          ₹{customers.reduce((acc, c) => {
+                            const rate = getPriceByName(c.orderPackaging) || 0;
+                            const qty = parseInt(c.orderQty) || 0;
+                            return acc + rate * qty;
+                          }, 0)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                  {customers.map((c, idx) => {
+                    const qty = parseInt(c.orderQty) || 0;
+                    let rate = 0;
+                    if (c.appliedPrice) {
+                      rate = parseInt(c.appliedPrice) || 0;
+                    } else {
+                      rate = getPriceByName(c.orderPackaging) || 0;
+                    }
+                    const total = rate * qty;
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: "#fff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 10,
+                          padding: 14,
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        {/* Header with Photo and Name */}
+                        <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
+                          <div>
                             {c.photo ? (
-                              <img src={c.photo} alt="thumb" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6 }} />
+                              <img src={c.photo} alt="customer" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: "1px solid #d1d5db" }} />
                             ) : (
-                              <span style={{ color: '#9ca3af' }}>—</span>
+                              <div style={{ width: 60, height: 60, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "1.5em" }}>📷</div>
                             )}
-                          </td>
-                          <td>{c.code}</td>
-                          <td>{c.mobile}</td>
-                          <td>{c.orderPackaging}</td>
-                          <td>{c.orderQty}</td>
-                          <td>
-                            <strong>₹{total}</strong>
-                          </td>
-                          <td>{c.remarks}</td>
-                          <td style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || '—'}</td>
-                          <td style={{color:'#2563eb', fontWeight:600}}>{c.addedBy || demoInfo.entryBy || ''}</td>
-                          <td>
-                         <button
-  type="button"
-  style={{ background: "#2563eb", color: "#fff", padding: "4px 8px", borderRadius: 4 }}
-  onClick={() => handleEditCustomer(c)}
->
-  Edit
-</button>
-  
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: "1.05em", color: "#1f2937" }}>{c.name}</div>
+                            <div style={{ fontSize: "0.85em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile}</div>
+                            {c.code && <div style={{ fontSize: "0.85em", color: "#6b7280" }}>📋 Code: {c.code}</div>}
+                          </div>
+                        </div>
 
-                          </td>
-                          <td>
-                         <button
-  type="button"
-  style={{ background: "red", color: "#fff", padding: "4px 8px", borderRadius: 4 }}
-  onClick={() => handleRemoveCustomer(c.id)}
->
-  Remove
-</button>
+                        {/* Details Grid */}
+                        <div style={{ background: "#f9fafb", borderRadius: 6, padding: 10, marginBottom: 12 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.9em" }}>
+                            <div>
+                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📦 Packaging</div>
+                              <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.orderPackaging}</div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📊 Qty</div>
+                              <div style={{ fontWeight: 600, color: "#2563eb", marginTop: 2 }}>{qty}</div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💰 Total</div>
+                              <div style={{ fontWeight: 700, color: "#16a34a", marginTop: 2, fontSize: "1.1em" }}>₹{total}</div>
+                            </div>
+                            <div>
+                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💳 Payment</div>
+                              <div style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1', marginTop: 2 }}>{c.paymentMethod || '—'}</div>
+                            </div>
+                          </div>
+                        </div>
 
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    <tr>
-                      <td colSpan="11" style={{ textAlign: "right", fontWeight: "bold" }}>
-                        Grand Total: ₹
-                        {customers.reduce((acc, c) => {
-                          const rate = getPriceByName(c.orderPackaging) || 0;
-                          const qty = parseInt(c.orderQty) || 0;
-                          return acc + rate * qty;
-                        }, 0)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                        {/* Additional Info */}
+                        {c.remarks && (
+                          <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
+                            <div style={{ color: "#6b7280" }}>📝 Remarks:</div>
+                            <div style={{ color: "#374151", marginTop: 2 }}>{c.remarks}</div>
+                          </div>
+                        )}
+
+                        {/* Entry By */}
+                        <div style={{ fontSize: "0.8em", color: "#6b7280", marginBottom: 10 }}>
+                          👤 By: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedBy || demoInfo.entryBy || ''}</span>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            style={{
+                              flex: 1,
+                              background: "#2563eb",
+                              color: "#fff",
+                              padding: "8px 12px",
+                              borderRadius: 6,
+                              border: "none",
+                              fontWeight: 600,
+                              fontSize: "0.9em",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => handleEditCustomer(c)}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={{
+                              flex: 1,
+                              background: "#ef4444",
+                              color: "#fff",
+                              padding: "8px 12px",
+                              borderRadius: 6,
+                              border: "none",
+                              fontWeight: 600,
+                              fontSize: "0.9em",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => handleRemoveCustomer(c.id)}
+                          >
+                            🗑️ Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Grand Total - Always Visible on Mobile */}
+                <div style={{ marginTop: 14, padding: 14, background: "linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%)", border: "2px solid #0284c7", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ color: "#0369a1", fontSize: "0.9em", fontWeight: 600, marginBottom: 6 }}>Grand Total</div>
+                  <div style={{ fontSize: "1.5em", fontWeight: 700, color: "#1e40af" }}>
+                    ₹{customers.reduce((acc, c) => {
+                      const rate = getPriceByName(c.orderPackaging) || 0;
+                      const qty = parseInt(c.orderQty) || 0;
+                      return acc + rate * qty;
+                    }, 0)}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -2520,32 +2716,76 @@ ${paymentLines || "—"}
               borderRadius: 14,
               boxShadow: "0 2px 12px #2563eb11",
               background: "#fff",
-              padding: "14px 18px",
+              padding: "clamp(14px, 4vw, 20px)",
             }}
           >
-            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "1.05rem" }}>Realtime Stock Dashboard</h3>
-            <p style={{ marginTop: 8, color: "#6b7280" }}>Shows sold, returned, and remaining stock (derived from customers and village stock).</p>
-            <div style={{ overflowX: "auto", marginTop: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
+            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1rem, 4vw, 1.15rem)" }}>
+              📊 Realtime Stock Dashboard
+            </h3>
+            <p style={{ marginTop: 8, color: "#6b7280", fontSize: "clamp(0.875rem, 3vw, 0.95rem)" }}>
+              Shows sold, returned, and remaining stock (derived from customers and village stock).
+            </p>
+
+            <style>{`
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              .stock-dashboard-table {
+                animation: fadeIn 0.3s ease-out;
+              }
+            `}</style>
+
+            <div className="stock-dashboard-table" style={{ marginTop: 12, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "clamp(0.9rem, 3vw, 0.95rem)", minWidth: "100%" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid #e6eefc" }}>
-                    <th style={{ padding: "6px 8px" }}>Packaging</th>
-                    <th style={{ padding: "6px 8px" }}>Stock Taken</th>
-                    <th style={{ padding: "6px 8px" }}>Sold to Customers</th>
-                    <th style={{ padding: "6px 8px" }}>Kept at Dairy</th>
-                    <th style={{ padding: "6px 8px" }}>Returned</th>
-                    <th style={{ padding: "6px 8px" }}>Remaining</th>
+                  <tr style={{ textAlign: "left", backgroundColor: "#f0f7ff", borderBottom: "3px solid #2563eb" }}>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#1f2937", whiteSpace: "nowrap" }}>
+                      <div>Packaging</div>
+                      <div style={{ fontSize: "0.75rem", color: "#2e7d32", marginTop: "2px" }}>✅ Remaining</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#1976d2", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>📦 Stock Taken</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#6a1b9a", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>💰 Stock Sold</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#e65100", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>🏪 At Dairy</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#d97706", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>🔄 Returned</div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {remainingStockList.map((r, idx) => (
-                    <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#fbfdff" }}>
-                      <td style={{ padding: "6px 8px" }}>{r.packaging}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.stock}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.sold}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.dairy}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.returned}</td>
-                      <td style={{ padding: "6px 8px", color: r.remaining < 0 ? "#b91c1c" : "#174ea6", fontWeight: 700 }}>{r.remaining}</td>
+                    <tr 
+                      key={idx} 
+                      style={{ 
+                        background: idx % 2 === 0 ? "#fff" : "#fbfdff",
+                        borderBottom: "1px solid #e0e7ff",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#f0f7ff";
+                        e.currentTarget.style.boxShadow = "inset 0 0 8px rgba(37, 99, 235, 0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? "#fff" : "#fbfdff";
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    >
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 600, color: "#1f2937", whiteSpace: "nowrap" }}>
+                        <div>{r.packaging}</div>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: r.remaining < 0 ? "#b91c1c" : "#2e7d32", marginTop: "2px" }}>
+                          {r.remaining}
+                        </div>
+                      </td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#e3f2fd", fontWeight: 600, color: "#1976d2", whiteSpace: "nowrap" }}>{r.stock}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#f3e5f5", fontWeight: 600, color: "#6a1b9a", whiteSpace: "nowrap" }}>{r.sold}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#fff3e0", fontWeight: 600, color: "#e65100", whiteSpace: "nowrap" }}>{r.dairy}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#fef3c7", fontWeight: 600, color: "#d97706", whiteSpace: "nowrap" }}>{r.returned}</td>
                     </tr>
                   ))}
                 </tbody>
