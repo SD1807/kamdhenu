@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { db, storage } from "./firebase";
+import { db } from "./firebase";
 import {
   addDoc,
   collection,
@@ -7,35 +7,30 @@ import {
   serverTimestamp,
   query,
   where,
-  getDocs,
   doc,
-  setDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
-import ExcelJS from "exceljs";
-import { VillageSelector } from "./components/stock/VillageSelector";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 
 export default function MemberPage() {
-  const [villages, setVillages] = useState([]);
-  const [selectedVillageid, setSelectedVillageid] = useState("");
-  const [customers, setCustomers] = useState([]);
+  // State for Excel-imported customers
   const [excelCustomers, setExcelCustomers] = useState([]);
+  const [filteredCustomers, setFilteredCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [photoCapture, setPhotoCapture] = useState("environment");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [demoStockTaken, setDemoStockTaken] = useState([]);
-  const [demoStockAtDairy, setDemoStockAtDairy] = useState([]);
-  const [stockReturned, setStockReturned] = useState([]);
-  const [paymentsCollected, setPaymentsCollected] = useState([]);
-  const [remainingStockList, setRemainingStockList] = useState([]);
-  
-  const [stockAtDairyInput, setStockAtDairyInput] = useState({ packaging: "", quantity: "" });
-  const [returnedStockInput, setReturnedStockInput] = useState({ packaging: "", quantity: "" });
-  const [paymentInput, setPaymentInput] = useState({ amount: "", mode: "", givenBy: "", takenBy: "" });
-  
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [villages, setVillages] = useState([]);
+  const [selectedVillage, setSelectedVillage] = useState("");
+ const [photoCapture, setPhotoCapture] = useState("environment");
+  // Always select the first village by default if available
+  useEffect(() => {
+    if (villages.length > 0 && !selectedVillage) {
+      setSelectedVillage(villages[0].id);
+    }
+  }, [villages, selectedVillage]);
+
   const [customerInput, setCustomerInput] = useState({
     name: "",
     code: "",
@@ -43,819 +38,497 @@ export default function MemberPage() {
     orderPackaging: "",
     orderQty: "",
     remarks: "",
-    paymentMethod: "",
   });
 
-  // Get packaging names from config (without prices)
-  const packagingNames = getPackagingNames();
+  const [stockData, setStockData] = useState({});
+  const [salesData, setSalesData] = useState({});
+  const [dairyData, setDairyData] = useState({});
+  const [remainingStockList, setRemainingStockList] = useState([]);
 
-  // Predefined 1+1 scheme combinations
-  const onePlusOneSchemes = [
-    { label: "1LTR JAR + 1LTR JAR", key: "1P_1P", base: 145 + 145, offer: 250, parts: ["1LTR JAR", "1LTR JAR"] },
-    { label: "1LTR JAR + 2LTR JAR", key: "1P_2P", base: 145 + 275, offer: 360, parts: ["1LTR JAR", "2LTR JAR"] },
-    { label: "1LTR JAR + 5LTR PLASTIC JAR", key: "1P_5P", base: 145 + 665, offer: 690, parts: ["1LTR JAR", "5LTR PLASTIC JAR"] },
-    { label: "1LTR JAR + 5LTR STEEL BARNI", key: "1P_5S", base: 145 + 890, offer: 880, parts: ["1LTR JAR", "5LTR STEEL BARNI"] },
-    { label: "1LTR JAR + 10 LTR JAR", key: "1P_10P", base: 145 + 1340, offer: 1260, parts: ["1LTR JAR", "10 LTR JAR"] },
-    { label: "1LTR JAR + 10 LTR STEEL", key: "1P_10S", base: 145 + 1770, offer: 1630, parts: ["1LTR JAR", "10 LTR STEEL"] },
-    { label: "1LTR JAR + 20 LTR CAN", key: "1P_20C", base: 145 + 3250, offer: 2885, parts: ["1LTR JAR", "20 LTR CAN"] },
-    { label: "1LTR JAR + 20 LTR STEEL", key: "1P_20S", base: 145 + 3520, offer: 3115, parts: ["1LTR JAR", "20 LTR STEEL"] },
-    { label: "2LTR JAR + 2LTR JAR", key: "2P_2P", base: 275 + 275, offer: 470, parts: ["2LTR JAR", "2LTR JAR"] },
-    { label: "2LTR JAR + 5LTR PLASTIC JAR", key: "2P_5P", base: 275 + 665, offer: 800, parts: ["2LTR JAR", "5LTR PLASTIC JAR"] },
-    { label: "2LTR JAR + 5LTR STEEL BARNI", key: "2P_5S", base: 275 + 890, offer: 990, parts: ["2LTR JAR", "5LTR STEEL BARNI"] },
-    { label: "2LTR JAR + 10 LTR JAR", key: "2P_10P", base: 275 + 1340, offer: 1370, parts: ["2LTR JAR", "10 LTR JAR"] },
-    { label: "2LTR JAR + 10 LTR STEEL", key: "2P_10S", base: 275 + 1770, offer: 1740, parts: ["2LTR JAR", "10 LTR STEEL"] },
-    { label: "2LTR JAR + 20 LTR CAN", key: "2P_20C", base: 275 + 3250, offer: 3000, parts: ["2LTR JAR", "20 LTR CAN"] },
-    { label: "2LTR JAR + 20 LTR STEEL", key: "2P_20S", base: 275 + 3520, offer: 3225, parts: ["2LTR JAR", "20 LTR STEEL"] },
-    { label: "5LTR PLASTIC JAR + 5LTR PLASTIC JAR", key: "5P_5P", base: 665 + 665, offer: 1130, parts: ["5LTR PLASTIC JAR", "5LTR PLASTIC JAR"] },
-    { label: "5LTR PLASTIC JAR + 5LTR STEEL BARNI", key: "5P_5S", base: 665 + 890, offer: 1320, parts: ["5LTR PLASTIC JAR", "5LTR STEEL BARNI"] },
-    { label: "5LTR PLASTIC JAR + 10 LTR JAR", key: "5P_10P", base: 665 + 1340, offer: 1700, parts: ["5LTR PLASTIC JAR", "10 LTR JAR"] },
-    { label: "5LTR PLASTIC JAR + 10 LTR STEEL", key: "5P_10S", base: 665 + 1770, offer: 2070, parts: ["5LTR PLASTIC JAR", "10 LTR STEEL"] },
-    { label: "5LTR PLASTIC JAR + 20 LTR CAN", key: "5P_20C", base: 665 + 3250, offer: 3330, parts: ["5LTR PLASTIC JAR", "20 LTR CAN"] },
-    { label: "5LTR PLASTIC JAR + 20 LTR STEEL", key: "5P_20S", base: 665 + 3520, offer: 3560, parts: ["5LTR PLASTIC JAR", "20 LTR STEEL"] },
-    { label: "5LTR STEEL BARNI + 5LTR STEEL BARNI", key: "5S_5S", base: 890 + 890, offer: 1515, parts: ["5LTR STEEL BARNI", "5LTR STEEL BARNI"] },
-    { label: "5LTR STEEL BARNI + 10 LTR JAR", key: "5S_10P", base: 890 + 1340, offer: 1895, parts: ["5LTR STEEL BARNI", "10 LTR JAR"] },
-    { label: "5LTR STEEL BARNI + 10 LTR STEEL", key: "5S_10S", base: 890 + 1770, offer: 2260, parts: ["5LTR STEEL BARNI", "10 LTR STEEL"] },
-    { label: "5LTR STEEL BARNI + 20 LTR CAN", key: "5S_20C", base: 890 + 3250, offer: 3520, parts: ["5LTR STEEL BARNI", "20 LTR CAN"] },
-    { label: "5LTR STEEL BARNI + 20 LTR STEEL", key: "5S_20S", base: 890 + 3520, offer: 3750, parts: ["5LTR STEEL BARNI", "20 LTR STEEL"] },
-    { label: "10 LTR JAR + 10 LTR JAR", key: "10P_10P", base: 1340 + 1340, offer: 2280, parts: ["10 LTR JAR", "10 LTR JAR"] },
-    { label: "10 LTR JAR + 10 LTR STEEL", key: "10P_10S", base: 1340 + 1770, offer: 2650, parts: ["10 LTR JAR", "10 LTR STEEL"] },
-    { label: "10 LTR JAR + 20 LTR CAN", key: "10P_20C", base: 1340 + 3250, offer: 3900, parts: ["10 LTR JAR", "20 LTR CAN"] },
-    { label: "10 LTR JAR + 20 LTR STEEL", key: "10P_20S", base: 1340 + 3520, offer: 4135, parts: ["10 LTR JAR", "20 LTR STEEL"] },
-    { label: "10 LTR STEEL + 10 LTR STEEL", key: "10S_10S", base: 1770 + 1770, offer: 3050, parts: ["10 LTR STEEL", "10 LTR STEEL"] },
-    { label: "10 LTR STEEL + 20 LTR CAN", key: "10S_20C", base: 1770 + 3250, offer: 4270, parts: ["10 LTR STEEL", "20 LTR CAN"] },
-    { label: "10 LTR STEEL + 20 LTR STEEL", key: "10S_20S", base: 1770 + 3520, offer: 4500, parts: ["10 LTR STEEL", "20 LTR STEEL"] },
-    { label: "20 LTR CAN + 20 LTR CAN", key: "20C_20C", base: 3250 + 3250, offer: 5530, parts: ["20 LTR CAN", "20 LTR CAN"] },
-    { label: "20 LTR STEEL + 20 LTR CAN", key: "20S_20C", base: 3520 + 3250, offer: 5750, parts: ["20 LTR STEEL", "20 LTR CAN"] },
-    { label: "20 LTR STEEL + 20 LTR STEEL", key: "20S_20S", base: 3520 + 3520, offer: 6000, parts: ["20 LTR STEEL", "20 LTR STEEL"] },
-  ];
+const packagingNames = getPackagingNames();
 
-  const handleCustomerPhotoChange = async (e) => {
+ const handleCustomerPhotoChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-
-    // Validate file
-    const maxSizeInMB = 5;
-    if (file.size > maxSizeInMB * 1024 * 1024) {
-      alert(`File size must be less than ${maxSizeInMB}MB`);
-      return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-      alert("Please select a valid image file");
-      return;
-    }
-
-    // Convert to base64 and store locally (no Firebase Storage needed)
-    try {
-      setUploadingPhoto(true);
-      
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result;
-        // Store base64 directly in state - will be saved to Firestore
-        setCustomerInput(prev => ({ 
-          ...prev, 
-          photo: base64String,
-          photoPreview: base64String
-        }));
-        setUploadingPhoto(false);
-        alert('Photo loaded successfully');
-      };
-      reader.onerror = () => {
-        setUploadingPhoto(false);
-        alert('Failed to read photo file');
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error('Error processing photo:', err);
-      setUploadingPhoto(false);
-      alert('Photo processing failed: ' + (err.message || err));
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCustomerInput((prev) => ({ ...prev, photo: reader.result }));
+    };
+    reader.readAsDataURL(file);
   };
-  // 🔹 Fetch villages
+  // Real-time listener for Excel-imported customers
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "villages"), snapshot => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVillages(data);
-      if (data.length > 0 && !selectedVillageid) setSelectedVillageid(data[0].id);
-    });
-    return () => unsub();
-  }, [selectedVillageid]);
-
-  // 🔹 Real-time listener for manual customers
-  useEffect(() => {
-    if (!selectedVillageid) return;
-    const q = query(collection(db, "customers"), where("villageId", "==", selectedVillageid));
-    const unsub = onSnapshot(q, snapshot => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setCustomers(data);
-    }, err => {
-      console.error("Error fetching manual customers:", err);
-      setCustomers([]);
-    });
-    return () => unsub();
-  }, [selectedVillageid]);
-
-  // 🔹 Real-time listener for excel customers
-  useEffect(() => {
-    if (!selectedVillageid) return;
-    const q = collection(db, "excelCustomers", selectedVillageid, "customers");
-    const unsub = onSnapshot(q, snapshot => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setExcelCustomers(data);
-    }, err => {
-      console.error("Error fetching excel customers:", err);
+    if (!selectedVillage) {
       setExcelCustomers([]);
+      setFilteredCustomers([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, "customers"),
+      where("villageId", "==", selectedVillage),
+      where("isExcelImported", "==", true)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const customers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setExcelCustomers(customers);
+      setFilteredCustomers(customers);
     });
-    return () => unsub();
-  }, [selectedVillageid]);
 
-  // 🔹 Real-time listener for stock from villageStocks 
+    return () => unsubscribe();
+  }, [selectedVillage]);
+
+  // Fetch stock data for selected village
   useEffect(() => {
-    if (!selectedVillageid) {
-      setDemoStockTaken([]);
+    if (!selectedVillage) {
+      setStockData({});
+      setSalesData({});
+      setDairyData({});
+      setRemainingStockList([]);
       return;
     }
 
-    const stockUnsub = onSnapshot(
-      doc(db, "villageStocks", selectedVillageid),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          const stocks = Array.isArray(data?.stocks) ? data.stocks : [];
-          setDemoStockTaken(stocks);
-        } else {
-          setDemoStockTaken([]);
-        }
-      },
-      (err) => {
-        console.error("Error loading stock:", err);
-        setDemoStockTaken([]);
+    const stockRef = doc(db, "stock", selectedVillage);
+    const unsubscribeStock = onSnapshot(stockRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        // Handle both data.packaging and direct packaging data
+        setStockData(data.packaging || data || {});
+      } else {
+        setStockData({});
       }
-    );
+    });
 
-    return () => stockUnsub();
-  }, [selectedVillageid]);
+    return () => unsubscribeStock();
+  }, [selectedVillage]);
 
-  // 🔹 Real-time listener for stock at dairy from villageStocks
+  // Fetch sales data
   useEffect(() => {
-    if (!selectedVillageid) {
-      setDemoStockAtDairy([]);
+    if (!selectedVillage) {
+      setSalesData({});
       return;
     }
 
-    const dairyUnsub = onSnapshot(
-      doc(db, "villageStocks", selectedVillageid),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          const dairyStocks = Array.isArray(data?.dairyStocks) ? data.dairyStocks : [];
-          setDemoStockAtDairy(dairyStocks);
-        } else {
-          setDemoStockAtDairy([]);
-        }
-      },
-      (err) => {
-        console.error("Error loading dairy stock:", err);
-        setDemoStockAtDairy([]);
-      }
+    const q = query(
+      collection(db, "orders"),
+      where("villageId", "==", selectedVillage)
     );
 
-    return () => dairyUnsub();
-  }, [selectedVillageid]);
+    const unsubscribeSales = onSnapshot(q, (snapshot) => {
+      const sales = {};
+      snapshot.docs.forEach((doc) => {
+        const order = doc.data();
+        const pkg = order.orderPackaging;
+        if (pkg) {
+          sales[pkg] = (sales[pkg] || 0) + (order.orderQty || 0);
+        }
+      });
+      setSalesData(sales);
+    });
 
+    return () => unsubscribeSales();
+  }, [selectedVillage]);
+
+  // Fetch dairy data
+  useEffect(() => {
+    if (!selectedVillage) {
+      setDairyData({});
+      return;
+    }
+
+    const dairyRef = doc(db, "dairyStock", selectedVillage);
+    const unsubscribeDairy = onSnapshot(dairyRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        // Handle both data.packaging and direct packaging data
+        setDairyData(data.packaging || data || {});
+      } else {
+        setDairyData({});
+      }
+    });
+
+    return () => unsubscribeDairy();
+  }, [selectedVillage]);
+
+  // Calculate remaining stock
+  useEffect(() => {
+    const allPackagings = new Set([
+      ...Object.keys(stockData || {}),
+      ...Object.keys(salesData || {}),
+      ...Object.keys(dairyData || {}),
+    ]);
+
+    const remaining = Array.from(allPackagings).map((pkg) => {
+      const stock = stockData[pkg] || 0;
+      const sold = salesData[pkg] || 0;
+      const dairy = dairyData[pkg] || 0;
+      const rem = stock - sold - dairy;
+      return { packaging: pkg, stock, sold, dairy, returned: 0, remaining: rem };
+    });
+
+    setRemainingStockList(remaining);
+  }, [stockData, salesData, dairyData]);
+
+  // Handle search
+  const handleSearch = (term) => {
+    setSearchTerm(term);
+    if (!term.trim()) {
+      setFilteredCustomers(excelCustomers);
+      return;
+    }
+
+    const results = excelCustomers.filter(customer => 
+      customer.name?.toLowerCase().includes(term.toLowerCase()) ||
+      customer.code?.toLowerCase().includes(term.toLowerCase()) ||
+      customer.mobile?.includes(term)
+    );
+    setFilteredCustomers(results);
+  };
+
+
+  
+  // Handle customer input changes
   const handleCustomerInput = (e) => {
     const { name, value } = e.target;
     setCustomerInput(prev => ({ ...prev, [name]: value }));
   };
+  
 
-  // 🔹 Excel upload
-  const handleExcelUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const arrayBuffer = evt.target.result;
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(arrayBuffer);
-        const worksheet = workbook.worksheets[0];
-        if (!worksheet) return;
-
-        // read headers
-        const headerRow = worksheet.getRow(1);
-        const headers = headerRow.values.slice(1).map(h => (h || '').toString().trim());
-
-        const rows = [];
-        worksheet.eachRow((row, rowNumber) => {
-          if (rowNumber === 1) return;
-          const vals = row.values.slice(1);
-          const obj = {};
-          headers.forEach((h, idx) => {
-            obj[h] = vals[idx] !== undefined && vals[idx] !== null ? vals[idx] : '';
-          });
-          rows.push(obj);
-        });
-
-        const auth = getAuth();
-        const user = auth.currentUser;
-        let username = user?.reloadUserInfo?.screenName || user?.providerData?.[0]?.screenName || "";
-        if (!username && user) username = user?.displayName || "";
-        const displayName = user?.displayName || "";
-        const email = user?.email || "";
-        const addedBy = username || displayName || email || "Unknown";
-
-        for (const row of rows) {
-          const payload = {
-            name: row.name || row.Name || "",
-            code: row.code || row.Code || "",
-            mobile: row.mobile || row.Mobile || "",
-            orderPackaging: row.orderPackaging || row.OrderPackaging || "",
-            orderQty: row.orderQty || row.OrderQty || "",
-            remarks: row.remarks || row.Remarks || "",
-            paymentMethod: row.paymentMethod || row.PaymentMethod || "",
-            villageId: selectedVillageid,
-            addedByRole: "member",
-            addedBy,
-            addedByUsername: username,
-            addedByDisplayName: displayName,
-            addedByEmail: email,
-            createdAt: serverTimestamp(),
-          };
-          try {
-            await addDoc(collection(db, "excelCustomers", selectedVillageid, "customers"), payload);
-          } catch (err) {
-            console.error("Error saving Excel row:", err);
-          }
-        }
-        alert("Excel data uploaded successfully!");
-      } catch (err) {
-        console.error('Excel upload failed:', err);
-        alert('Excel upload failed: ' + (err.message || err));
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
+  // Handle save customer order
   const handleSaveCustomer = async () => {
-    if (!selectedVillageid) { alert("Select a village first"); return; }
-    if (uploadingPhoto) { alert('Please wait until photo upload completes'); return; }
-    if (!customerInput.name.trim() || !customerInput.mobile.trim()) { alert("Fill required fields"); return; }
+    if (!selectedCustomer || !customerInput.orderPackaging || !customerInput.orderQty) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
 
     const auth = getAuth();
     const user = auth.currentUser;
-    let username = user?.reloadUserInfo?.screenName || user?.providerData?.[0]?.screenName || "";
-    if (!username && user) username = user?.displayName || "";
-    const displayName = user?.displayName || "";
-    const email = user?.email || "";
-    const addedBy = username || displayName || email || "Unknown";
-
-    // Detect if selected packaging is a 1+1 scheme
-    const detectedScheme = onePlusOneSchemes.find(s => s.label === customerInput.orderPackaging);
-    
-    const payload = {
-      name: customerInput.name,
-      code: customerInput.code || "",
-      mobile: customerInput.mobile,
-      orderPackaging: customerInput.orderPackaging || "",
-      orderQty: customerInput.orderQty || "",
-      photo: customerInput.photo || null, // Only save actual upload URL, not preview
-      remarks: customerInput.remarks || "",
-      paymentMethod: customerInput.paymentMethod || "",
-    };
-    
-    // Add scheme info if applicable
-    if (detectedScheme) {
-      payload.schemeType = "1+1";
-      payload.schemeKey = detectedScheme.key;
-      payload.appliedPrice = detectedScheme.offer;
-    }
-    
-    payload.villageId = selectedVillageid;
-    payload.addedByRole = "member";
-    payload.addedBy = addedBy;
-    payload.addedByUsername = username;
-    payload.addedByDisplayName = displayName;
-    payload.addedByEmail = email;
-    payload.createdAt = serverTimestamp();
+    const addedBy = user?.displayName || user?.email || "Unknown";
 
     try {
-      await addDoc(collection(db, "customers"), payload);
+      await addDoc(collection(db, "orders"), {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        customerCode: selectedCustomer.code,
+        customerMobile: selectedCustomer.mobile,
+        villageId: selectedVillage,
+        orderPackaging: customerInput.orderPackaging,
+        orderQty: customerInput.orderQty,
+        remarks: customerInput.remarks,
+         photo: customerInput.photo || "",
+        addedBy,
+        createdAt: serverTimestamp(),
+        status: "pending"
+      });
 
-      // Add to active demo if exists
-      const q = query(
-        collection(db, "demosales"),
-        where("village", "==", villages.find(v => v.id === selectedVillageid)?.name || ""),
-        where("status", "==", "active")
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const demoDoc = snap.docs[0];
-        await addDoc(collection(db, "demosales", demoDoc.id, "customers"), payload);
-      }
-
-      setCustomerInput({ name: "", code: "", mobile: "", orderPackaging: "", orderQty: "", remarks: "", photoPreview: null });
-      alert("Customer added successfully!");
-    } catch (err) {
-      alert("Error saving customer: " + err.message);
+      // Reset form
+      setCustomerInput({
+        name: "",
+        code: "",
+        mobile: "",
+        photo: "",
+        orderPackaging: "",
+        orderQty: "",
+        remarks: "",
+      });
+      setSelectedCustomer(null);
+      toast.success("Order added successfully");
+    } catch (error) {
+      console.error("Error adding order:", error);
+      toast.error("Error adding order");
     }
   };
 
-  const filteredCustomers = excelCustomers.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.mobile.includes(searchTerm) ||
-    c.code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // 🔹 Real-time listener for villages
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "villages"), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setVillages(data);
+    });
+    return () => unsub();
+  }, []);
 
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ padding: "20px" }}>
       <Navbar />
       <h1>Member Page</h1>
 
-      {/* Village Selection with Search */}
-      {villages.length === 0 ? (
-        <p>No villages yet</p>
-      ) : (
-        <VillageSelector
-          villageOptions={villages}
-          selectedVillageId={selectedVillageid}
-          onVillageChange={(villageId) => setSelectedVillageid(villageId)}
-          label="Select Village"
-          showLabel={true}
-        />
-      )}
-
-      {/* Excel Upload */}
-      <div style={{ marginBottom: 20 }}>
-        <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
-      </div>
-
-      {/* Search */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ position: "relative", maxWidth: "500px" }}>
-          <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
-            <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search by name, mobile, or code..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ 
-                width: "100%", 
-                padding: "12px 12px 12px 40px", 
-                borderRadius: 8, 
-                border: "2px solid #e0e7ff",
-                fontSize: "0.95em",
-                transition: "all 0.2s",
-                boxShadow: searchTerm ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
-                borderColor: searchTerm ? "#2563eb" : "#e0e7ff"
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "#2563eb";
-                e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
-              }}
-              onBlur={(e) => {
-                if (!searchTerm) {
-                  e.target.style.borderColor = "#e0e7ff";
-                  e.target.style.boxShadow = "none";
-                }
-              }}
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                style={{
-                  position: "absolute",
-                  right: 12,
-                  background: "none",
-                  border: "none",
-                  fontSize: "1.1em",
-                  cursor: "pointer",
-                  color: "#9ca3af",
-                  padding: "4px 8px",
-                  transition: "color 0.2s"
-                }}
-                onMouseOver={(e) => e.target.style.color = "#2563eb"}
-                onMouseOut={(e) => e.target.style.color = "#9ca3af"}
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {searchTerm && filteredCustomers.length > 0 && (
-            <ul style={{ 
-              listStyle: "none", 
-              padding: "8px 0", 
-              maxHeight: 320, 
-              overflowY: "auto", 
-              marginTop: 8, 
-              background: "#fff", 
-              borderRadius: 8, 
-              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.2)",
-              border: "1px solid #e0e7ff",
-              position: "relative",
-              zIndex: 10
-            }}>
-              {filteredCustomers.map((c, idx) => (
-                <li
-                  key={c.id}
-                  onClick={() => {
-                    setCustomerInput({ name: c.name || "", code: c.code || "", mobile: c.mobile || "", orderPackaging: c.orderPackaging || "", orderQty: c.orderQty || "", remarks: c.remarks || "" });
-                    setSearchTerm("");
-                  }}
-                  style={{ 
-                    padding: "12px 16px", 
-                    cursor: "pointer", 
-                    borderBottom: idx < filteredCustomers.length - 1 ? "1px solid #f0f0f0" : "none",
-                    transition: "all 0.15s",
-                    background: "#fff"
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = "#f0f7ff";
-                    e.currentTarget.style.paddingLeft = "20px";
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = "#fff";
-                    e.currentTarget.style.paddingLeft = "16px";
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: "#1f2937", fontSize: "0.95em" }}>{c.name}</div>
-                      <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile} {c.code && `• Code: ${c.code}`}</div>
-                    </div>
-                    <div style={{ color: "#2563eb", fontSize: "1em" }}>→</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {searchTerm && filteredCustomers.length === 0 && (
-            <div style={{ 
-              marginTop: 8, 
-              padding: "16px", 
-              background: "#fef3c7", 
-              border: "1px solid #fcd34d",
-              borderRadius: 8, 
-              textAlign: "center",
-              color: "#92400e"
-            }}>
-              <div style={{ fontSize: "1.4em", marginBottom: 6 }}>🔍</div>
-              <div style={{ fontWeight: 600 }}>No customers found</div>
-              <div style={{ fontSize: "0.85em", marginTop: 4, opacity: 0.8 }}>Try searching with a different name, mobile, or code</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Customer Form */}
-      <div style={{ marginBottom: 20, background: "#e3eefd", padding: 18, borderRadius: 8, border: "2px solid #2563eb" }}>
-        <h3 style={{ margin: "0 0 16px 0", color: "#174ea6", fontWeight: 700, fontSize: "1.3rem" }}>📝 Add Customer</h3>
+      {/* Excel Customer Search Section */}
+      <div style={{ marginBottom: "2rem", background: "#f0f9ff", padding: "1rem", borderRadius: "8px" }}>
+        <h3 style={{ marginTop: 0, color: "#0369a1" }}>Search Excel-Imported Customers</h3>
         
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
-          <div>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Name *</label>
-            <input placeholder="Customer name" name="name" value={customerInput.name} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Code</label>
-            <input placeholder="Customer code" name="code" value={customerInput.code} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Mobile *</label>
-            <input placeholder="Phone number" name="mobile" value={customerInput.mobile} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-          </div>
-
-          <div>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Packaging</label>
-            <select name="orderPackaging" value={customerInput.orderPackaging} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }}>
-              <option value="">Select Packaging</option>
-              {packagingNames.map(opt => (
-                <option key={opt} value={opt}>{opt} — ₹{getPriceByName(opt)}</option>
-              ))}
-              {/* 1+1 scheme options */}
-              <optgroup label="1+1 Schemes">
-                {onePlusOneSchemes.map(scheme => (
-                  <option key={"scheme-" + scheme.key} value={scheme.label}>
-                    {scheme.label} — Offer ₹{scheme.offer}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
-          <div>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Quantity</label>
-            <input placeholder="Qty" type="number" name="orderQty" value={customerInput.orderQty} onChange={handleCustomerInput} min="1" style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-          </div>
-
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Photo</label>
-            <input type="file" accept="image/*" capture="environment" onChange={handleCustomerPhotoChange} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-            {uploadingPhoto && <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 4 }}>⏳ Uploading...</div>}
-          </div>
+        {/* Village Selection */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "block", marginBottom: "0.5rem" }}>Select Village:</label>
+          <select
+            value={selectedVillage}
+            onChange={(e) => setSelectedVillage(e.target.value)}
+            style={{ width: "100%", padding: "0.5rem" }}
+          >
+            <option value="">Select Village</option>
+            {villages.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Photo Preview */}
-        {(customerInput.photo || customerInput.photoPreview) && (
-          <div style={{ marginBottom: 16, textAlign: "center" }}>
-            <div style={{ fontSize: "0.9em", fontWeight: 600, color: "#0369a1", marginBottom: 8 }}>📸 Photo Preview</div>
-            <img
-              src={customerInput.photo || customerInput.photoPreview}
-              alt="preview"
-              style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "2px solid #0284c7", boxShadow: "0 2px 8px rgba(2, 132, 199, 0.2)" }}
-            />
+        {/* Search Input */}
+        <div style={{ marginBottom: "1rem" }}>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search by name, code, or mobile number..."
+            style={{ width: "100%", padding: "0.5rem", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+          />
+        </div>
+
+        {/* Search Results */}
+        {filteredCustomers.length > 0 ? (
+          <div style={{ marginBottom: "1rem" }}>
+            <h4 style={{ margin: "0 0 0.5rem 0" }}>Found {filteredCustomers.length} Customers</h4>
+            <div style={{ maxHeight: "300px", overflowY: "auto", background: "white", borderRadius: "4px", border: "1px solid #e5e7eb" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#e0f2fe" }}>
+                    <th style={{ padding: "0.5rem", textAlign: "left" }}>Name</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left" }}>Code</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left" }}>Mobile</th>
+                    <th style={{ padding: "0.5rem", textAlign: "left" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCustomers.map((customer) => (
+                    <tr 
+                      key={customer.id} 
+                      style={{ 
+                        borderBottom: "1px solid #e5e7eb",
+                        backgroundColor: selectedCustomer?.id === customer.id ? "#f0f9ff" : "transparent"
+                      }}
+                    >
+                      <td style={{ padding: "0.5rem" }}>{customer.name}</td>
+                      <td style={{ padding: "0.5rem" }}>{customer.code}</td>
+                      <td style={{ padding: "0.5rem" }}>{customer.mobile}</td>
+                      <td style={{ padding: "0.5rem" }}>
+                        <button
+                          onClick={() => setSelectedCustomer(customer)}
+                          style={{
+                            padding: "0.25rem 0.5rem",
+                            backgroundColor: selectedCustomer?.id === customer.id ? "#0284c7" : "#2563eb",
+                            color: "white",
+                            borderRadius: "4px",
+                            border: "none",
+                            cursor: "pointer"
+                          }}
+                        >
+                          {selectedCustomer?.id === customer.id ? "Selected" : "Select"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div style={{ textAlign: "center", padding: "2rem", color: "#64748b" }}>
+            {searchTerm ? "No customers found matching your search" : "No Excel-imported customers found in this village"}
           </div>
         )}
 
-        <div>
-          <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Remarks</label>
-          <input placeholder="Any remarks..." name="remarks" value={customerInput.remarks} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
-        </div>
+        {/* Order Form for Selected Customer */}
+        {selectedCustomer && (
+          <div style={{ marginTop: "1rem", padding: "1rem", backgroundColor: "white", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+            <h4 style={{ margin: "0 0 1rem 0" }}>Add Order for {selectedCustomer.name}</h4>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 200px" }}>
+                <label>Package Type</label>
+                <select
+                  value={customerInput.orderPackaging}
+                  onChange={handleCustomerInput}
+                  name="orderPackaging"
+                  style={{ width: "100%", padding: "0.5rem" }}
+                >
+                  <option value="">Select Package</option>
+                  {packagingNames.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: "1 1 100px" }}>
+                <label>Quantity</label>
+                <input
+                  type="number"
+                  name="orderQty"
+                  value={customerInput.orderQty}
+                  onChange={handleCustomerInput}
+                  min="1"
+                  style={{ width: "100%", padding: "0.5rem" }}
+                />
+              </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 8 }}>Payment Method</label>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="PAVTI"
-                checked={customerInput.paymentMethod === 'PAVTI'}
-                onChange={handleCustomerInput}
-              />
-              <span>PAVTI</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="CASH"
-                checked={customerInput.paymentMethod === 'CASH'}
-                onChange={handleCustomerInput}
-              />
-              <span>CASH</span>
-            </label>
+               <div style={{ minWidth: 180 }}>
+                  <label>Photo </label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select value={photoCapture} onChange={(e) => setPhotoCapture(e.target.value)} style={{ padding: '6px', borderRadius: 6 }}>
+                      <option value="environment">Back Camera (recommended)</option>
+                      <option value="user">Front Camera</option>
+                    </select>
+ <input
+  type="file"
+  accept="image/*"
+  onChange={handleCustomerPhotoChange}
+  style={{ border: "1px solid red", padding: 8 }}
+/>
+
+
+
+                  </div>
+                  {customerInput.photo && (
+                    <div style={{ marginTop: 6 }}>
+                      <img src={customerInput.photo} alt="preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />
+                    </div>
+                  )}
+                </div>
+              <div style={{ flex: "1 1 200px" }}>
+                <label>Remarks</label>
+                <input
+                  type="text"
+                  name="remarks"
+                  value={customerInput.remarks}
+                  onChange={handleCustomerInput}
+                  style={{ width: "100%", padding: "0.5rem" }}
+                />
+              </div>
+            </div>
+            <div style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: "bold" }}>
+                Total: ₹{(() => {
+                  if (!customerInput.orderPackaging) return 0;
+                  const price = getPriceByName(customerInput.orderPackaging) || 0;
+                  const qty = parseInt(customerInput.orderQty) || 0;
+                  return price * qty;
+                })()}
+              </div>
+              <div>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#dc2626",
+                    color: "white",
+                    borderRadius: "4px",
+                    border: "none",
+                    cursor: "pointer",
+                    marginRight: "0.5rem"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCustomer}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#16a34a",
+                    color: "white",
+                    borderRadius: "4px",
+                    border: "none",
+                    cursor: "pointer"
+                  }}
+                >
+                  Add Order
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div style={{ fontWeight: "bold", marginTop: 14, padding: 12, background: "#fff", borderRadius: 6, textAlign: "center", color: "#0369a1", fontSize: "1.1em" }}>
-          💰 Total Value: ₹{(() => {
-            if (!customerInput.orderPackaging) return 0;
-            const qty = parseInt(customerInput.orderQty) || 0;
-            
-            // Check if selected packaging is a 1+1 scheme
-            const scheme = onePlusOneSchemes.find(s => s.label === customerInput.orderPackaging);
-            if (scheme) {
-              return scheme.offer * qty;
-            }
-            
-            // Otherwise, get price from packaging config
-            const price = getPriceByName(customerInput.orderPackaging) || 0;
-            return price * qty;
-          })()}
-        </div>
-
-        <button style={{ marginTop: 14, width: "100%", background: "#16a34a", color: "#fff", padding: "12px 20px", borderRadius: 8, fontWeight: 700, fontSize: "1em", border: "none", cursor: "pointer", transition: "all 0.2s" }} onClick={handleSaveCustomer} onMouseOver={(e) => e.target.style.background = "#15803d"} onMouseOut={(e) => e.target.style.background = "#16a34a"}>
-          ✓ Add Customer
-        </button>
+        )}
       </div>
 
-      {/* Customers Table - Responsive */}
-      {customers.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 16 }}>👥 Added Customers ({customers.length})</h3>
+      {/* Realtime Stock Dashboard */}
+      {selectedVillage && (
+        <div style={{ 
+          marginTop: "2rem",
+          marginBottom: "2rem",
+          background: "#fff",
+          borderRadius: 14,
+          boxShadow: "0 2px 12px #2563eb11",
+          padding: "clamp(14px, 4vw, 20px)",
+        }}>
+          <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1.05rem, 4vw, 1.2rem)", marginBottom: "8px" }}>📊 Realtime Stock Dashboard</h3>
+          <p style={{ marginTop: 0, marginBottom: 16, color: "#6b7280", fontSize: "clamp(0.9rem, 3vw, 0.95rem)" }}>Stock inventory by packaging type.</p>
           
-          {/* Desktop Table */}
           <style>{`
-            @media (min-width: 768px) {
-              .member-page-desktop-table { display: block !important; }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            .stock-cards-container {
+              animation: fadeIn 0.3s ease-out;
             }
           `}</style>
-          <div className="member-page-desktop-table" style={{ display: "none", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Name</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Mobile</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Packaging</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Qty</th>
-                  <th style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Photo</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Remarks</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Payment Method</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", fontSize: "0.95em" }}>Added By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.map((c, idx) => (
-                  <tr key={c.id} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: "#1f2937" }}>{c.name}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563" }}>{c.mobile}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563" }}>{c.orderPackaging}</td>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: "#2563eb" }}>{c.orderQty}</td>
-                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
-                      {c.photo ? (
-                        <img src={c.photo} alt="customer" style={{ width: 50, height: 50, borderRadius: 6, objectFit: "cover", border: "1px solid #d1d5db" }} />
-                      ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "0.85em" }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "12px 14px", color: "#6b7280", fontSize: "0.9em" }}>{c.remarks || "-"}</td>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || "—"}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563", fontSize: "0.9em" }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
 
-          {/* Mobile Card View */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-            {customers.map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 10,
-                  padding: 14,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                }}
-              >
-                {/* Header with Photo and Name */}
-                <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
-                  <div>
-                    {c.photo ? (
-                      <img src={c.photo} alt="customer" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid #d1d5db" }} />
-                    ) : (
-                      <div style={{ width: 60, height: 60, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "1.5em" }}>👤</div>
-                    )}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: "1.05em", color: "#1f2937" }}>{c.name}</div>
-                    <div style={{ fontSize: "0.85em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile}</div>
-                  </div>
-                </div>
-
-                {/* Details Grid */}
-                <div style={{ background: "#f9fafb", borderRadius: 6, padding: 10, marginBottom: 12 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.9em" }}>
-                    <div>
-                      <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📦 Packaging</div>
-                      <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.orderPackaging}</div>
+          <div className="stock-cards-container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 100%, 220px), 1fr))", gap: "clamp(12px, 3vw, 16px)" }}>
+            {remainingStockList.length > 0 ? (
+              remainingStockList.map((r, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: "#f9fafb",
+                    borderRadius: "10px",
+                    border: "1px solid #e5e7eb",
+                    overflow: "hidden",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.15)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  {/* Packaging Name Header */}
+                  <div style={{ padding: "clamp(10px, 3vw, 12px)", backgroundColor: "#f0f7ff", borderBottom: "1px solid #e0e7ff" }}>
+                    <div style={{ fontSize: "clamp(0.9rem, 3vw, 0.95rem)", fontWeight: 700, color: "#1f2937" }}>
+                      {r.packaging}
                     </div>
-                    <div>
-                      <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📊 Qty</div>
-                      <div style={{ fontWeight: 600, color: "#2563eb", marginTop: 2 }}>{c.orderQty}</div>
+                    <div style={{ fontSize: "clamp(1rem, 4vw, 1.3rem)", fontWeight: 700, color: r.remaining < 0 ? "#b91c1c" : "#2e7d32", marginTop: "4px" }}>
+                      {r.remaining}
+                    </div>
+                  </div>
+
+                  {/* Data Cells */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#e3f2fd", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#1976d2", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      📦 {r.stock}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#f3e5f5", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#6a1b9a", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      💰 {r.sold}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#fff3e0", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#e65100", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      🏪 {r.dairy}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#fef3c7", textAlign: "center", color: "#d97706", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      🔄 {r.returned}
                     </div>
                   </div>
                 </div>
-
-                {/* Payment & Remarks */}
-                <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
-                  <div style={{ color: "#6b7280" }}>💳 Payment Method:</div>
-                  <div style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1', marginTop: 2 }}>
-                    {c.paymentMethod || "—"}
-                  </div>
-                </div>
-
-                {c.remarks && (
-                  <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
-                    <div style={{ color: "#6b7280" }}>📝 Remarks:</div>
-                    <div style={{ color: "#374151", marginTop: 2 }}>{c.remarks}</div>
-                  </div>
-                )}
-
-                {/* Added By */}
-                <div style={{ fontSize: "0.8em", color: "#6b7280", paddingTop: 10, borderTop: "1px solid #e5e7eb" }}>
-                  👤 Added by: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</span>
-                </div>
+              ))
+            ) : (
+              <div style={{ padding: "2rem", textAlign: "center", color: "#999", gridColumn: "1/-1" }}>
+                No stock data available
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Stock Inventory by Packaging Dashboard - Synced with DemoSalesList */}
-      {selectedVillageid && (
-        <div style={{ marginTop: 32, marginBottom: 28 }}>
-          <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 20, fontSize: "1.5rem" }}>📦 STOCK INVENTORY BY PACKAGING</h3>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
-                  <th style={{ padding: "14px 16px", textAlign: "left", borderRight: "1px solid #1e40af" }}>📌 Package Name</th>
-                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>📦 Taken</th>
-                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>💰 Sold</th>
-                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>🏭 At Dairy</th>
-                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>↩️ Returned</th>
-                  <th style={{ padding: "14px 16px", textAlign: "center" }}>📈 Remaining</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const packagingMap = {};
-
-                  // Process taken stock from Firebase (synced from DemoSalesList)
-                  demoStockTaken.forEach(s => {
-                    if (!packagingMap[s.packaging]) {
-                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
-                    }
-                    packagingMap[s.packaging].taken += parseInt(s.quantity) || 0;
-                  });
-
-                  // Process dairy stock from Firebase (synced from DemoSalesList)
-                  demoStockAtDairy.forEach(s => {
-                    if (!packagingMap[s.packaging]) {
-                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
-                    }
-                    packagingMap[s.packaging].dairy += parseInt(s.quantity) || 0;
-                  });
-
-                  // Process returned stock
-                  stockReturned.forEach(s => {
-                    if (!packagingMap[s.packaging]) {
-                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
-                    }
-                    packagingMap[s.packaging].returned += parseInt(s.quantity) || 0;
-                  });
-
-                  // Process sold from manual and excel customers (including scheme handling)
-                  const processCustomer = (c) => {
-                    if (c.orderPackaging) {
-                      // Check if it's a scheme
-                      const scheme = onePlusOneSchemes.find(s => s.label === c.orderPackaging);
-                      const qty = parseInt(c.orderQty) || 1;
-
-                      if (scheme && scheme.parts) {
-                        // Deduct each part of the scheme
-                        scheme.parts.forEach(part => {
-                          if (!packagingMap[part]) {
-                            packagingMap[part] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
-                          }
-                          packagingMap[part].sold += qty; // qty of schemes = qty of each part
-                        });
-                      } else {
-                        // Single packaging
-                        if (!packagingMap[c.orderPackaging]) {
-                          packagingMap[c.orderPackaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
-                        }
-                        packagingMap[c.orderPackaging].sold += qty;
-                      }
-                    }
-                  };
-
-                  customers.forEach(processCustomer);
-                  excelCustomers.forEach(processCustomer);
-
-                  // Convert to array and sort
-                  const packagingArray = Object.keys(packagingMap).map(pkg => ({
-                    name: pkg,
-                    ...packagingMap[pkg],
-                    remaining: packagingMap[pkg].taken - packagingMap[pkg].sold - packagingMap[pkg].dairy + packagingMap[pkg].returned
-                  })).sort((a, b) => a.name.localeCompare(b.name));
-
-                  if (packagingArray.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan="6" style={{ padding: "20px", textAlign: "center", color: "#9ca3af" }}>
-                          No stock data available. Add stock from DemoSalesList or other sources.
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  return packagingArray.map((pkg, idx) => (
-                    <tr key={pkg.name} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-                      <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1f2937" }}>{pkg.name}</td>
-                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#0284c7" }}>{pkg.taken}</td>
-                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#a855f7" }}>{pkg.sold}</td>
-                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#ea580c" }}>{pkg.dairy}</td>
-                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#16a34a" }}>{pkg.returned}</td>
-                      <td style={{ 
-                        padding: "14px 16px", 
-                        textAlign: "center", 
-                        fontWeight: 700, 
-                        color: pkg.remaining >= 0 ? "#22c55e" : "#ef4444",
-                        background: pkg.remaining >= 0 ? "#f0fdf4" : "#fef2f2",
-                        borderRadius: "6px"
-                      }}>
-                        {pkg.remaining} {pkg.remaining < 0 && "⚠️"}
-                      </td>
-                    </tr>
-                  ));
-                })()}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: 12, padding: "12px 16px", background: "rgba(2, 132, 199, 0.1)", borderRadius: 8, border: "1px solid #0284c7" }}>
-            <p style={{ margin: 0, color: "#0369a1", fontSize: "0.9em", fontWeight: 600 }}>
-              💡 <strong>Synced with DemoSalesList:</strong> Stock data automatically syncs across both pages. Add stock in DemoSalesList and it will appear here.
-            </p>
+            )}
           </div>
         </div>
       )}
