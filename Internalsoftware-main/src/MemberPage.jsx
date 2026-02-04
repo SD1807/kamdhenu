@@ -12,6 +12,8 @@ import {
   setDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
