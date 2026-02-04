@@ -40,6 +40,11 @@ export default function MemberPage() {
     remarks: "",
   });
 
+  const [stockData, setStockData] = useState({});
+  const [salesData, setSalesData] = useState({});
+  const [dairyData, setDairyData] = useState({});
+  const [remainingStockList, setRemainingStockList] = useState([]);
+
 const packagingNames = getPackagingNames();
 
  const handleCustomerPhotoChange = (e) => {
@@ -76,6 +81,97 @@ const packagingNames = getPackagingNames();
 
     return () => unsubscribe();
   }, [selectedVillage]);
+
+  // Fetch stock data for selected village
+  useEffect(() => {
+    if (!selectedVillage) {
+      setStockData({});
+      setSalesData({});
+      setDairyData({});
+      setRemainingStockList([]);
+      return;
+    }
+
+    const stockRef = doc(db, "stock", selectedVillage);
+    const unsubscribeStock = onSnapshot(stockRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        // Handle both data.packaging and direct packaging data
+        setStockData(data.packaging || data || {});
+      } else {
+        setStockData({});
+      }
+    });
+
+    return () => unsubscribeStock();
+  }, [selectedVillage]);
+
+  // Fetch sales data
+  useEffect(() => {
+    if (!selectedVillage) {
+      setSalesData({});
+      return;
+    }
+
+    const q = query(
+      collection(db, "orders"),
+      where("villageId", "==", selectedVillage)
+    );
+
+    const unsubscribeSales = onSnapshot(q, (snapshot) => {
+      const sales = {};
+      snapshot.docs.forEach((doc) => {
+        const order = doc.data();
+        const pkg = order.orderPackaging;
+        if (pkg) {
+          sales[pkg] = (sales[pkg] || 0) + (order.orderQty || 0);
+        }
+      });
+      setSalesData(sales);
+    });
+
+    return () => unsubscribeSales();
+  }, [selectedVillage]);
+
+  // Fetch dairy data
+  useEffect(() => {
+    if (!selectedVillage) {
+      setDairyData({});
+      return;
+    }
+
+    const dairyRef = doc(db, "dairyStock", selectedVillage);
+    const unsubscribeDairy = onSnapshot(dairyRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        // Handle both data.packaging and direct packaging data
+        setDairyData(data.packaging || data || {});
+      } else {
+        setDairyData({});
+      }
+    });
+
+    return () => unsubscribeDairy();
+  }, [selectedVillage]);
+
+  // Calculate remaining stock
+  useEffect(() => {
+    const allPackagings = new Set([
+      ...Object.keys(stockData || {}),
+      ...Object.keys(salesData || {}),
+      ...Object.keys(dairyData || {}),
+    ]);
+
+    const remaining = Array.from(allPackagings).map((pkg) => {
+      const stock = stockData[pkg] || 0;
+      const sold = salesData[pkg] || 0;
+      const dairy = dairyData[pkg] || 0;
+      const rem = stock - sold - dairy;
+      return { packaging: pkg, stock, sold, dairy, returned: 0, remaining: rem };
+    });
+
+    setRemainingStockList(remaining);
+  }, [stockData, salesData, dairyData]);
 
   // Handle search
   const handleSearch = (term) => {
@@ -356,6 +452,86 @@ const packagingNames = getPackagingNames();
           </div>
         )}
       </div>
+
+      {/* Realtime Stock Dashboard */}
+      {selectedVillage && (
+        <div style={{ 
+          marginTop: "2rem",
+          marginBottom: "2rem",
+          background: "#fff",
+          borderRadius: 14,
+          boxShadow: "0 2px 12px #2563eb11",
+          padding: "clamp(14px, 4vw, 20px)",
+        }}>
+          <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1.05rem, 4vw, 1.2rem)", marginBottom: "8px" }}>📊 Realtime Stock Dashboard</h3>
+          <p style={{ marginTop: 0, marginBottom: 16, color: "#6b7280", fontSize: "clamp(0.9rem, 3vw, 0.95rem)" }}>Stock inventory by packaging type.</p>
+          
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            .stock-cards-container {
+              animation: fadeIn 0.3s ease-out;
+            }
+          `}</style>
+
+          <div className="stock-cards-container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(150px, 100%, 220px), 1fr))", gap: "clamp(12px, 3vw, 16px)" }}>
+            {remainingStockList.length > 0 ? (
+              remainingStockList.map((r, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: "#f9fafb",
+                    borderRadius: "10px",
+                    border: "1px solid #e5e7eb",
+                    overflow: "hidden",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.15)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  {/* Packaging Name Header */}
+                  <div style={{ padding: "clamp(10px, 3vw, 12px)", backgroundColor: "#f0f7ff", borderBottom: "1px solid #e0e7ff" }}>
+                    <div style={{ fontSize: "clamp(0.9rem, 3vw, 0.95rem)", fontWeight: 700, color: "#1f2937" }}>
+                      {r.packaging}
+                    </div>
+                    <div style={{ fontSize: "clamp(1rem, 4vw, 1.3rem)", fontWeight: 700, color: r.remaining < 0 ? "#b91c1c" : "#2e7d32", marginTop: "4px" }}>
+                      {r.remaining}
+                    </div>
+                  </div>
+
+                  {/* Data Cells */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#e3f2fd", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#1976d2", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      📦 {r.stock}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#f3e5f5", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#6a1b9a", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      💰 {r.sold}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#fff3e0", borderBottom: "1px solid #f0f7ff", textAlign: "center", color: "#e65100", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      🏪 {r.dairy}
+                    </div>
+                    <div style={{ padding: "clamp(8px, 3vw, 10px)", backgroundColor: "#fef3c7", textAlign: "center", color: "#d97706", fontWeight: 600, fontSize: "clamp(0.85rem, 3vw, 0.9rem)" }}>
+                      🔄 {r.returned}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ padding: "2rem", textAlign: "center", color: "#999", gridColumn: "1/-1" }}>
+                No stock data available
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
