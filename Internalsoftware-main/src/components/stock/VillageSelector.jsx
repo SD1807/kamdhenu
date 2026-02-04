@@ -194,12 +194,12 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
       
       {/* Search Village Section */}
       <div style={{ marginBottom: "10px", position: "relative" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#666", marginBottom: "6px" }}>
+        <div style={{ fontSize: "clamp(11px, 2.5vw, 12px)", fontWeight: "600", color: "#666", marginBottom: "6px" }}>
           🔍 Search Old Village
         </div>
         <div style={{ position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
-            <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
+            <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "clamp(1em, 4vw, 1.2em)" }}>🔍</span>
             <input
               ref={searchInputRef}
               type="text"
@@ -213,15 +213,16 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
               onKeyDown={handleKeyDown}
               style={{
                 width: "100%",
-                padding: "12px 12px 12px 40px",
-                fontSize: "14px",
+                padding: "clamp(10px, 3vw, 12px) 12px clamp(10px, 3vw, 12px) clamp(36px, 8vw, 40px)",
+                fontSize: "clamp(13px, 3.5vw, 14px)",
                 borderRadius: "6px",
                 border: "2px solid #e0e7ff",
                 boxSizing: "border-box",
                 backgroundColor: "#fff",
                 transition: "all 0.2s",
                 boxShadow: searchInput ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
-                borderColor: searchInput ? "#2563eb" : "#e0e7ff"
+                borderColor: searchInput ? "#2563eb" : "#e0e7ff",
+                minHeight: "44px",
               }}
               onMouseEnter={(e) => {
                 if (searchInput) {
@@ -247,11 +248,16 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
                   right: 12,
                   background: "none",
                   border: "none",
-                  fontSize: "1.1em",
+                  fontSize: "clamp(1em, 4vw, 1.1em)",
                   cursor: "pointer",
                   color: "#9ca3af",
-                  padding: "4px 8px",
-                  transition: "color 0.2s"
+                  padding: "8px",
+                  transition: "color 0.2s",
+                  minWidth: "40px",
+                  minHeight: "40px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
                 onMouseOver={(e) => e.target.style.color = "#2563eb"}
                 onMouseOut={(e) => e.target.style.color = "#9ca3af"}
@@ -261,7 +267,7 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
             )}
           </div>
           
-          {/* Search Results Dropdown - Enhanced */}
+          {/* Search Results Dropdown - Mobile Enhanced */}
           {showSearchResults && searchInput.trim() && (
             <div
               ref={dropdownRef}
@@ -274,20 +280,20 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
                 borderTop: "none",
                 borderRadius: "0 0 6px 6px",
                 backgroundColor: "#fff",
-                maxHeight: 280,
+                maxHeight: "clamp(200px, 50vh, 320px)",
                 overflowY: "auto",
                 zIndex: 10,
                 boxShadow: "0 4px 12px rgba(37, 99, 235, 0.2)",
               }}
             >
               {filteredVillages.length === 0 ? (
-                <div style={{ padding: "16px", color: "#92400e", textAlign: "center", fontSize: "14px", background: "#fef3c7" }}>
-                  <div style={{ fontSize: "1.2em", marginBottom: 6 }}>🔍</div>
+                <div style={{ padding: "clamp(12px, 4vw, 16px)", color: "#92400e", textAlign: "center", fontSize: "clamp(13px, 3.5vw, 14px)", background: "#fef3c7" }}>
+                  <div style={{ fontSize: "1.5em", marginBottom: 6 }}>🔍</div>
                   No villages found
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize: "11px", color: "#999", padding: "8px 12px", backgroundColor: "#fafafa", fontWeight: "500", borderBottom: "1px solid #e0e7ff" }}>
+                  <div style={{ fontSize: "clamp(10px, 2.5vw, 11px)", color: "#999", padding: "clamp(8px, 2vw, 8px) clamp(10px, 3vw, 12px)", backgroundColor: "#fafafa", fontWeight: "500", borderBottom: "1px solid #e0e7ff", position: "sticky", top: 0 }}>
                     Found {filteredVillages.length} village{filteredVillages.length > 1 ? "s" : ""}
                   </div>
                   {filteredVillages.map((village, index) => (
@@ -295,7 +301,7 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
                       key={village.id}
                       onClick={() => handleVillageSelect(village.id)}
                       style={{
-                        padding: "12px 16px",
+                        padding: "clamp(12px, 3.5vw, 14px) clamp(12px, 4vw, 16px)",
                         cursor: "pointer",
                         backgroundColor: 
                           highlightedIndex === index ? "#f0f7ff" : 
@@ -305,28 +311,32 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
                         fontWeight: highlightedIndex === index || selectedVillageId === village.id ? "600" : "400",
                         color: "#1f2937",
                         transition: "all 0.15s",
+                        minHeight: "44px",
+                        display: "flex",
+                        alignItems: "center",
+                        fontSize: "clamp(13px, 3.5vw, 15px)",
                       }}
                       onMouseEnter={(e) => {
                         setHighlightedIndex(index);
                         e.currentTarget.style.background = "#f0f7ff";
-                        e.currentTarget.style.paddingLeft = "20px";
+                        e.currentTarget.style.paddingLeft = "clamp(16px, 4.5vw, 20px)";
                       }}
                       onMouseLeave={(e) => {
                         if (highlightedIndex === index) {
                           e.currentTarget.style.background = "#f0f7ff";
-                          e.currentTarget.style.paddingLeft = "16px";
+                          e.currentTarget.style.paddingLeft = "clamp(12px, 4vw, 16px)";
                         } else if (selectedVillageId === village.id) {
                           e.currentTarget.style.background = "#f0f0f0";
-                          e.currentTarget.style.paddingLeft = "16px";
+                          e.currentTarget.style.paddingLeft = "clamp(12px, 4vw, 16px)";
                         } else {
                           e.currentTarget.style.background = "#fff";
-                          e.currentTarget.style.paddingLeft = "16px";
+                          e.currentTarget.style.paddingLeft = "clamp(12px, 4vw, 16px)";
                         }
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                         <span>{village.name}</span>
-                        {selectedVillageId === village.id && <span style={{ color: "#16a34a", fontWeight: "bold" }}>✓</span>}
+                        {selectedVillageId === village.id && <span style={{ color: "#16a34a", fontWeight: "bold", marginLeft: "8px" }}>✓</span>}
                       </div>
                     </div>
                   ))}
@@ -335,17 +345,17 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
             </div>
           )}
         </div>
-        <div style={{ fontSize: "11px", color: "#999", marginTop: "6px" }}>
+        <div style={{ fontSize: "clamp(10px, 2vw, 11px)", color: "#999", marginTop: "6px", display: "none" }}>
           💡 Type to search • ↓↑ to navigate • Enter to select • Esc to close
         </div>
       </div>
 
       {/* Add New Village Section */}
       <div style={{ marginBottom: "15px" }}>
-        <div style={{ fontSize: "12px", fontWeight: "600", color: "#666", marginBottom: "6px" }}>
+        <div style={{ fontSize: "clamp(11px, 2.5vw, 12px)", fontWeight: "600", color: "#666", marginBottom: "6px" }}>
           ➕ Add New Village
         </div>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <input
             type="text"
             placeholder="Enter village name"
@@ -357,13 +367,25 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
               }
             }}
             style={{
-              flex: 1,
-              padding: "10px",
-              fontSize: "14px",
-              borderRadius: "4px",
+              width: "100%",
+              padding: "clamp(10px, 3vw, 12px) clamp(10px, 3vw, 12px)",
+              fontSize: "clamp(13px, 3.5vw, 14px)",
+              borderRadius: "6px",
               border: "1px solid #ddd",
               boxSizing: "border-box",
               backgroundColor: "#fff",
+              transition: "all 0.2s",
+              minHeight: "44px",
+              display: "flex",
+              alignItems: "center",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#2563eb";
+              e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#ddd";
+              e.target.style.boxShadow = "none";
             }}
           />
           <button
@@ -371,17 +393,30 @@ export const VillageSelector = ({ villageOptions, selectedVillageId, onVillageCh
             onClick={handleCreateNewVillage}
             disabled={!addNewInput.trim()}
             style={{
-              padding: "10px 14px",
+              width: "100%",
+              padding: "clamp(10px, 3vw, 12px) 14px",
               background: addNewInput.trim() ? "#2563eb" : "#ccc",
               color: "#fff",
               border: "none",
-              borderRadius: "4px",
+              borderRadius: "6px",
               cursor: addNewInput.trim() ? "pointer" : "not-allowed",
               fontWeight: "600",
-              fontSize: "14px",
+              fontSize: "clamp(13px, 3.5vw, 14px)",
+              transition: "background 0.2s",
+              minHeight: "44px",
+            }}
+            onMouseEnter={(e) => {
+              if (addNewInput.trim()) {
+                e.target.style.background = "#1d4ed8";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (addNewInput.trim()) {
+                e.target.style.background = "#2563eb";
+              }
             }}
           >
-            Add
+            Add Village
           </button>
         </div>
       </div>

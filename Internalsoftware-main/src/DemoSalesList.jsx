@@ -302,6 +302,38 @@ useEffect(() => {
     setCustomerInput((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Compress image to reduce file size for Firebase
+  const compressImage = (base64String) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64String;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // Reduce dimensions if image is too large
+        const maxWidth = 800;
+        const maxHeight = 800;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to JPEG with quality 0.7 to further reduce size
+        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(base64String);
+    });
+  };
+
   const handleCustomerPhotoChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -318,21 +350,35 @@ useEffect(() => {
       return;
     }
 
-    // Convert to base64 and store locally (no Firebase Storage needed)
+    // Convert to base64 and compress before storing
     try {
       setUploadingPhoto(true);
       
       const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result;
-        // Store base64 directly in state - will be saved to Firestore
-        setCustomerInput((prev) => ({ 
-          ...prev, 
-          photo: base64String,
-          photoPreview: base64String
-        }));
-        setUploadingPhoto(false);
-        toast.success("Photo loaded successfully");
+      reader.onload = async () => {
+        try {
+          const base64String = reader.result;
+          // Compress the image before storing
+          const compressedBase64 = await compressImage(base64String);
+          
+          // Verify compressed size is reasonable
+          if (compressedBase64.length > 900000) {
+            toast.warning("Image still large after compression, may cause issues");
+          }
+          
+          // Store compressed base64 in state
+          setCustomerInput((prev) => ({ 
+            ...prev, 
+            photo: compressedBase64,
+            photoPreview: compressedBase64
+          }));
+          setUploadingPhoto(false);
+          toast.success("Photo loaded and compressed successfully");
+        } catch (compressErr) {
+          console.error("Compression error:", compressErr);
+          setUploadingPhoto(false);
+          toast.error("Photo compression failed");
+        }
       };
       reader.onerror = () => {
         setUploadingPhoto(false);
@@ -2339,8 +2385,13 @@ ${paymentLines || "—"}
             {/* Customer List - Responsive */}
             {customers.length > 0 && (
               <div style={{ marginTop: 18 }}>
+                <style>{`
+                  @media (min-width: 768px) {
+                    .demo-sales-desktop-table { display: block !important; }
+                  }
+                `}</style>
                 {/* Desktop Table */}
-                <div style={{ display: "none", "@media (min-width: 768px)": { display: "block" }, overflowX: "auto" }}>
+                <div className="demo-sales-desktop-table" style={{ display: "none", overflowX: "auto" }}>
                   <table
                     style={{
                       width: "100%",
@@ -2711,32 +2762,76 @@ ${paymentLines || "—"}
               borderRadius: 14,
               boxShadow: "0 2px 12px #2563eb11",
               background: "#fff",
-              padding: "14px 18px",
+              padding: "clamp(14px, 4vw, 20px)",
             }}
           >
-            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "1.05rem" }}>Realtime Stock Dashboard</h3>
-            <p style={{ marginTop: 8, color: "#6b7280" }}>Shows sold, returned, and remaining stock (derived from customers and village stock).</p>
-            <div style={{ overflowX: "auto", marginTop: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
+            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1rem, 4vw, 1.15rem)" }}>
+              📊 Realtime Stock Dashboard
+            </h3>
+            <p style={{ marginTop: 8, color: "#6b7280", fontSize: "clamp(0.875rem, 3vw, 0.95rem)" }}>
+              Shows sold, returned, and remaining stock (derived from customers and village stock).
+            </p>
+
+            <style>{`
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              .stock-dashboard-table {
+                animation: fadeIn 0.3s ease-out;
+              }
+            `}</style>
+
+            <div className="stock-dashboard-table" style={{ marginTop: 12, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "clamp(0.9rem, 3vw, 0.95rem)", minWidth: "100%" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid #e6eefc" }}>
-                    <th style={{ padding: "6px 8px" }}>Packaging</th>
-                    <th style={{ padding: "6px 8px" }}>Stock Taken</th>
-                    <th style={{ padding: "6px 8px" }}>Sold to Customers</th>
-                    <th style={{ padding: "6px 8px" }}>Kept at Dairy</th>
-                    <th style={{ padding: "6px 8px" }}>Returned</th>
-                    <th style={{ padding: "6px 8px" }}>Remaining</th>
+                  <tr style={{ textAlign: "left", backgroundColor: "#f0f7ff", borderBottom: "3px solid #2563eb" }}>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#1f2937", whiteSpace: "nowrap" }}>
+                      <div>Packaging</div>
+                      <div style={{ fontSize: "0.75rem", color: "#2e7d32", marginTop: "2px" }}>✅ Remaining</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#1976d2", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>📦 Stock Taken</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#6a1b9a", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>💰 Stock Sold</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#e65100", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>🏪 At Dairy</div>
+                    </th>
+                    <th style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 700, color: "#d97706", textAlign: "center", whiteSpace: "nowrap" }}>
+                      <div>🔄 Returned</div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {remainingStockList.map((r, idx) => (
-                    <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#fbfdff" }}>
-                      <td style={{ padding: "6px 8px" }}>{r.packaging}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.stock}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.sold}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.dairy}</td>
-                      <td style={{ padding: "6px 8px" }}>{r.returned}</td>
-                      <td style={{ padding: "6px 8px", color: r.remaining < 0 ? "#b91c1c" : "#174ea6", fontWeight: 700 }}>{r.remaining}</td>
+                    <tr 
+                      key={idx} 
+                      style={{ 
+                        background: idx % 2 === 0 ? "#fff" : "#fbfdff",
+                        borderBottom: "1px solid #e0e7ff",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#f0f7ff";
+                        e.currentTarget.style.boxShadow = "inset 0 0 8px rgba(37, 99, 235, 0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? "#fff" : "#fbfdff";
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    >
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", fontWeight: 600, color: "#1f2937", whiteSpace: "nowrap" }}>
+                        <div>{r.packaging}</div>
+                        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: r.remaining < 0 ? "#b91c1c" : "#2e7d32", marginTop: "2px" }}>
+                          {r.remaining}
+                        </div>
+                      </td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#e3f2fd", fontWeight: 600, color: "#1976d2", whiteSpace: "nowrap" }}>{r.stock}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#f3e5f5", fontWeight: 600, color: "#6a1b9a", whiteSpace: "nowrap" }}>{r.sold}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#fff3e0", fontWeight: 600, color: "#e65100", whiteSpace: "nowrap" }}>{r.dairy}</td>
+                      <td style={{ padding: "clamp(8px, 2vw, 12px)", textAlign: "center", backgroundColor: "#fef3c7", fontWeight: 600, color: "#d97706", whiteSpace: "nowrap" }}>{r.returned}</td>
                     </tr>
                   ))}
                 </tbody>

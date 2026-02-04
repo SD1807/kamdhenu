@@ -631,7 +631,12 @@ export default function MemberPage() {
           <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 16 }}>👥 Added Customers ({customers.length})</h3>
           
           {/* Desktop Table */}
-          <div style={{ display: "none", "@media (min-width: 768px)": { display: "block" }, borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", overflowX: "auto" }}>
+          <style>{`
+            @media (min-width: 768px) {
+              .member-page-desktop-table { display: block !important; }
+            }
+          `}</style>
+          <div className="member-page-desktop-table" style={{ display: "none", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
