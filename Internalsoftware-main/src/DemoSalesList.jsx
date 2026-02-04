@@ -302,6 +302,55 @@ useEffect(() => {
     setCustomerInput((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Ultra-aggressive compression for phone camera photos (1920x1080)
+  // Target: Keep base64 string under 200KB for safe Firebase storage
+  const compressImage = (base64String) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64String;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // For phone camera (1920x1080): reduce to 400x300 max
+        const maxWidth = 400;
+        const maxHeight = 300;
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Start with 30% quality for phone photos
+        let compressed = canvas.toDataURL('image/jpeg', 0.3);
+        let quality = 0.3;
+        
+        // Progressively reduce quality until under 200KB
+        while (compressed.length > 200000 && quality > 0.1) {
+          quality -= 0.05;
+          compressed = canvas.toDataURL('image/jpeg', quality);
+        }
+        
+        // If still too large, try even smaller dimensions
+        if (compressed.length > 200000) {
+          canvas.width = 300;
+          canvas.height = 225;
+          ctx.drawImage(img, 0, 0, 300, 225);
+          compressed = canvas.toDataURL('image/jpeg', 0.25);
+        }
+        
+        resolve(compressed);
+      };
+      img.onerror = () => {
+        resolve('');
+      };
+    });
+  };
+
   const handleCustomerPhotoChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -318,21 +367,43 @@ useEffect(() => {
       return;
     }
 
-    // Convert to base64 and store locally (no Firebase Storage needed)
+    // Convert to base64 and compress before storing
     try {
       setUploadingPhoto(true);
       
       const reader = new FileReader();
-      reader.onload = () => {
-        const base64String = reader.result;
-        // Store base64 directly in state - will be saved to Firestore
-        setCustomerInput((prev) => ({ 
-          ...prev, 
-          photo: base64String,
-          photoPreview: base64String
-        }));
-        setUploadingPhoto(false);
-        toast.success("Photo loaded successfully");
+      reader.onload = async () => {
+        try {
+          const base64String = reader.result;
+          // Compress the image before storing
+          const compressedBase64 = await compressImage(base64String);
+          
+          if (!compressedBase64) {
+            toast.error("Failed to compress image. Please try a different photo.");
+            setUploadingPhoto(false);
+            return;
+          }
+          
+          const sizeKB = Math.round(compressedBase64.length / 1000);
+          
+          // Verify compressed size is safe for Firebase
+          if (sizeKB > 200) {
+            toast.warning(`Image compressed to ${sizeKB}KB - Firebase safe limit is ~250KB`);
+          }
+          
+          // Store compressed base64 in state
+          setCustomerInput((prev) => ({ 
+            ...prev, 
+            photo: compressedBase64,
+            photoPreview: compressedBase64
+          }));
+          setUploadingPhoto(false);
+          toast.success(`Photo loaded and compressed to ${sizeKB}KB ✓`);
+        } catch (compressErr) {
+          console.error("Compression error:", compressErr);
+          setUploadingPhoto(false);
+          toast.error("Photo compression failed");
+        }
       };
       reader.onerror = () => {
         setUploadingPhoto(false);
@@ -2262,8 +2333,31 @@ ${paymentLines || "—"}
                     />
                   </div>
                   {(customerInput.photo || customerInput.photoPreview) && (
-                    <div style={{ marginTop: 6 }}>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
                       <img src={customerInput.photo || customerInput.photoPreview} alt="preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerInput(prev => ({ ...prev, photo: '', photoPreview: '' }));
+                          toast.success("Photo removed");
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '0.9em',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.background = '#dc2626'}
+                        onMouseOut={(e) => e.target.style.background = '#ef4444'}
+                        title="Delete photo"
+                      >
+                        ✕ Delete
+                      </button>
                       {uploadingPhoto && (
                         <div style={{ fontSize: 11, color: '#6b7280' }}>Uploading...</div>
                       )}
@@ -2432,7 +2526,12 @@ ${paymentLines || "—"}
                         <td colSpan="6" style={{ padding: "12px 8px", textAlign: "right" }}>Grand Total:</td>
                         <td style={{ padding: "12px 8px", color: "#2563eb" }}>
                           ₹{customers.reduce((acc, c) => {
-                            const rate = getPriceByName(c.orderPackaging) || 0;
+                            let rate = 0;
+                            if (c.appliedPrice) {
+                              rate = parseInt(c.appliedPrice) || 0;
+                            } else {
+                              rate = getPriceByName(c.orderPackaging) || 0;
+                            }
                             const qty = parseInt(c.orderQty) || 0;
                             return acc + rate * qty;
                           }, 0)}
@@ -2563,7 +2662,12 @@ ${paymentLines || "—"}
                   <div style={{ color: "#0369a1", fontSize: "0.9em", fontWeight: 600, marginBottom: 6 }}>Grand Total</div>
                   <div style={{ fontSize: "1.5em", fontWeight: 700, color: "#1e40af" }}>
                     ₹{customers.reduce((acc, c) => {
-                      const rate = getPriceByName(c.orderPackaging) || 0;
+                      let rate = 0;
+                      if (c.appliedPrice) {
+                        rate = parseInt(c.appliedPrice) || 0;
+                      } else {
+                        rate = getPriceByName(c.orderPackaging) || 0;
+                      }
                       const qty = parseInt(c.orderQty) || 0;
                       return acc + rate * qty;
                     }, 0)}
