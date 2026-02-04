@@ -514,7 +514,7 @@ export default function MemberPage() {
       <div style={{ marginBottom: 20, background: "#e3eefd", padding: 18, borderRadius: 8, border: "2px solid #2563eb" }}>
         <h3 style={{ margin: "0 0 16px 0", color: "#174ea6", fontWeight: 700, fontSize: "1.3rem" }}>📝 Add Customer</h3>
         
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
           <div>
             <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Name *</label>
             <input placeholder="Customer name" name="name" value={customerInput.name} onChange={handleCustomerInput} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
@@ -553,7 +553,7 @@ export default function MemberPage() {
             <input placeholder="Qty" type="number" name="orderQty" value={customerInput.orderQty} onChange={handleCustomerInput} min="1" style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
           </div>
 
-          <div>
+          <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Photo</label>
             <input type="file" accept="image/*" capture="environment" onChange={handleCustomerPhotoChange} style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #b6c7e6", borderRadius: 6 }} />
             {uploadingPhoto && <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 4 }}>⏳ Uploading...</div>}
@@ -625,22 +625,24 @@ export default function MemberPage() {
         </button>
       </div>
 
-      {/* Customers Table */}
+      {/* Customers Table - Responsive */}
       {customers.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 16 }}>👥 Added Customers ({customers.length})</h3>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+          
+          {/* Desktop Table */}
+          <div style={{ display: "none", "@media (min-width: 768px)": { display: "block" }, borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Name</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Mobile</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Packaging</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Qty</th>
-                  <th style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #1e40af" }}>Photo</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Remarks</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af" }}>Payment Method</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left" }}>Added By</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Name</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Mobile</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Packaging</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Qty</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Photo</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Remarks</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Payment Method</th>
+                  <th style={{ padding: "12px 14px", textAlign: "left", fontSize: "0.95em" }}>Added By</th>
                 </tr>
               </thead>
               <tbody>
@@ -664,6 +666,71 @@ export default function MemberPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+            {customers.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  background: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 10,
+                  padding: 14,
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                }}
+              >
+                {/* Header with Photo and Name */}
+                <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
+                  <div>
+                    {c.photo ? (
+                      <img src={c.photo} alt="customer" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid #d1d5db" }} />
+                    ) : (
+                      <div style={{ width: 60, height: 60, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "1.5em" }}>👤</div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: "1.05em", color: "#1f2937" }}>{c.name}</div>
+                    <div style={{ fontSize: "0.85em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile}</div>
+                  </div>
+                </div>
+
+                {/* Details Grid */}
+                <div style={{ background: "#f9fafb", borderRadius: 6, padding: 10, marginBottom: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.9em" }}>
+                    <div>
+                      <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📦 Packaging</div>
+                      <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.orderPackaging}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📊 Qty</div>
+                      <div style={{ fontWeight: 600, color: "#2563eb", marginTop: 2 }}>{c.orderQty}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment & Remarks */}
+                <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
+                  <div style={{ color: "#6b7280" }}>💳 Payment Method:</div>
+                  <div style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1', marginTop: 2 }}>
+                    {c.paymentMethod || "—"}
+                  </div>
+                </div>
+
+                {c.remarks && (
+                  <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
+                    <div style={{ color: "#6b7280" }}>📝 Remarks:</div>
+                    <div style={{ color: "#374151", marginTop: 2 }}>{c.remarks}</div>
+                  </div>
+                )}
+
+                {/* Added By */}
+                <div style={{ fontSize: "0.8em", color: "#6b7280", paddingTop: 10, borderTop: "1px solid #e5e7eb" }}>
+                  👤 Added by: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
