@@ -221,6 +221,31 @@ useEffect(() => {
   return () => unsub();
 }, [selectedVillageId]);
 
+// Real-time listener for stock at dairy from Firebase
+useEffect(() => {
+  if (!selectedVillageId) {
+    setStockAtDairy([]);
+    return;
+  }
+
+  const unsub = onSnapshot(
+    doc(db, "villageStocks", selectedVillageId),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setStockAtDairy(Array.isArray(data.dairyStocks) ? data.dairyStocks : []);
+      } else {
+        setStockAtDairy([]);
+      }
+    },
+    (err) => {
+      console.error("Error loading dairy stock:", err);
+      setStockAtDairy([]);
+    }
+  );
+
+  return () => unsub();
+}, [selectedVillageId]);
 
   // Listen to customers for selectedVillageId and update entryBy in demoInfo
   useEffect(() => {
@@ -838,8 +863,21 @@ useEffect(() => {
     const pkg = stockInput.packaging;
     
     // Add to stockAtDairy (NO deduction from Stock Taken - dairy is just where the stock is stored)
-    setStockAtDairy((prev) => [...prev, { packaging: pkg, quantity: String(qty) }]);
+    const updatedStockAtDairy = [...stockAtDairy, { packaging: pkg, quantity: String(qty) }];
+    setStockAtDairy(updatedStockAtDairy);
     toast.success(`✅ Noted ${qty} ${pkg} stored at Dairy`);
+    
+    // Auto-save to Firebase
+    if (selectedVillageId) {
+      setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        dairyStocks: updatedStockAtDairy,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch((err) => {
+        console.error('Failed to save dairy stock:', err);
+      });
+    }
+    
     setStockInput(initialStock);
   };
 
@@ -852,6 +890,18 @@ useEffect(() => {
     setStockAtDairy((prev) => {
       const updated = prev.filter((_, i) => i !== idx);
       console.log("📦 Updated stockAtDairy:", updated);
+      
+      // Auto-save to Firebase
+      if (selectedVillageId) {
+        setDoc(doc(db, 'villageStocks', selectedVillageId), {
+          dairyStocks: updated,
+          villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch((err) => {
+          console.error('Failed to save dairy stock changes:', err);
+        });
+      }
+      
       return updated;
     });
   };
@@ -871,6 +921,17 @@ useEffect(() => {
     const updated = [...stockAtDairy];
     updated[index].quantity = String(newQuantity || 0);
     setStockAtDairy(updated);
+    
+    // Auto-save to Firebase
+    if (selectedVillageId) {
+      setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        dairyStocks: updated,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch((err) => {
+        console.error('Failed to save dairy stock changes:', err);
+      });
+    }
   };
 
 // Persist stock for the currently selected village
@@ -986,6 +1047,15 @@ const handleSelectExcelCustomer = (customer) => {
         stockReturned,
         savedAt: Timestamp.now(),
       });
+
+      // Clear stocks in Firebase after successful submission
+      if (selectedVillageId) {
+        await setDoc(doc(db, 'villageStocks', selectedVillageId), {
+          stocks: [],
+          dairyStocks: [],
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
 
       setMsg("Demo sales record submitted and saved to history!");
       setDemoInfo(initialDemoInfo);
@@ -1923,65 +1993,121 @@ ${paymentLines || "—"}
             </div>
 
             {/* Search & Select customer */}
-           {/* Search Input */}
-<div className="relative w-full max-w-md">
-  <input
-    type="text"
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-    placeholder="Search customer..."
-    className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-  />
+            <div style={{ position: "relative", width: "100%", maxWidth: "500px" }}>
+              <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
+                <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search customer by name, mobile, code..."
+                  style={{
+                    width: "100%",
+                    padding: "12px 12px 12px 40px",
+                    borderRadius: 8,
+                    border: "2px solid #e0e7ff",
+                    fontSize: "0.95em",
+                    transition: "all 0.2s",
+                    boxShadow: searchTerm ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
+                    borderColor: searchTerm ? "#2563eb" : "#e0e7ff"
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#2563eb";
+                    e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
+                  }}
+                  onBlur={(e) => {
+                    if (!searchTerm) {
+                      e.target.style.borderColor = "#e0e7ff";
+                      e.target.style.boxShadow = "none";
+                    }
+                  }}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      background: "none",
+                      border: "none",
+                      fontSize: "1.1em",
+                      cursor: "pointer",
+                      color: "#9ca3af",
+                      padding: "4px 8px",
+                      transition: "color 0.2s"
+                    }}
+                    onMouseOver={(e) => e.target.style.color = "#2563eb"}
+                    onMouseOut={(e) => e.target.style.color = "#9ca3af"}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
-  {/* Dropdown Suggestions - Max 5 Results */}
-{filteredCustomers.length > 0 && (
-  <ul
-    className="absolute z-20 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 overflow-y-auto"
-    style={{
-      padding: 0,
-      listStyle: "none",
-      fontSize: "1rem",
-      maxHeight: "280px",
-    }}
-  >
-  {filteredCustomers.slice(0, 5).map((cust, idx) => (
-  <li
-    key={idx}
-    onClick={() => {
-     if (!editingCustomerId) {
-  setCustomerInput((prev) => ({
-    ...prev,
-    name: cust.name || "",
-    code: cust.code || "",
-    mobile: cust.mobile || "",
-  }));
-}
-
-      setSearchTerm(cust.name); // optional: keep searchTerm synced
-      setFilteredCustomers([]);
-    }}
-    className="flex flex-col cursor-pointer px-4 py-3 hover:bg-blue-100 hover:text-blue-800 transition-colors duration-150 border-b border-gray-200 last:border-b-0"
-  >
-    <div style={{ fontWeight: 600, color: "#1f2937" }}>📋 {cust.name}</div>
-    <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "4px" }}>
-      📞 {cust.mobile || "N/A"}
-    </div>
-    <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-      🔖 {cust.code || "N/A"}
-    </div>
-  </li>
-))}
-
-  {filteredCustomers.length > 5 && (
-    <li style={{ padding: "8px 4px", textAlign: "center", color: "#9ca3af", fontSize: "0.85rem" }}>
-      ... {filteredCustomers.length - 5} more results
-    </li>
-  )}
-  </ul>
-)}
-
-
-</div>
+              {filteredCustomers.length > 0 && (
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: "8px 0",
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    marginTop: 8,
+                    background: "#fff",
+                    borderRadius: 8,
+                    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.2)",
+                    border: "1px solid #e0e7ff",
+                    position: "relative",
+                    zIndex: 20
+                  }}
+                >
+                  {filteredCustomers.slice(0, 6).map((cust, idx) => (
+                    <li
+                      key={idx}
+                      onClick={() => {
+                        if (!editingCustomerId) {
+                          setCustomerInput((prev) => ({
+                            ...prev,
+                            name: cust.name || "",
+                            code: cust.code || "",
+                            mobile: cust.mobile || "",
+                          }));
+                        }
+                        setSearchTerm(cust.name);
+                        setFilteredCustomers([]);
+                      }}
+                      style={{
+                        padding: "12px 16px",
+                        cursor: "pointer",
+                        borderBottom: idx < Math.min(filteredCustomers.length - 1, 5) ? "1px solid #f0f0f0" : "none",
+                        transition: "all 0.15s",
+                        background: "#fff"
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "#f0f7ff";
+                        e.currentTarget.style.paddingLeft = "20px";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = "#fff";
+                        e.currentTarget.style.paddingLeft = "16px";
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#1f2937", fontSize: "0.95em" }}>📋 {cust.name}</div>
+                          <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 2 }}>📱 {cust.mobile || "N/A"} {cust.code && `• Code: ${cust.code}`}</div>
+                        </div>
+                        <div style={{ color: "#2563eb", fontSize: "1em" }}>→</div>
+                      </div>
+                    </li>
+                  ))}
+                  {filteredCustomers.length > 6 && (
+                    <li style={{ padding: "8px 16px", textAlign: "center", color: "#9ca3af", fontSize: "0.85em", borderTop: "1px solid #f0f0f0" }}>
+                      ... {filteredCustomers.length - 6} more results
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
 
 
      

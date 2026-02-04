@@ -8,7 +8,8 @@ import {
   query,
   where,
   getDocs,
-  doc
+  doc,
+  setDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
@@ -196,6 +197,33 @@ export default function MemberPage() {
     return () => stockUnsub();
   }, [selectedVillageid]);
 
+  // 🔹 Real-time listener for stock at dairy from villageStocks
+  useEffect(() => {
+    if (!selectedVillageid) {
+      setDemoStockAtDairy([]);
+      return;
+    }
+
+    const dairyUnsub = onSnapshot(
+      doc(db, "villageStocks", selectedVillageid),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          const dairyStocks = Array.isArray(data?.dairyStocks) ? data.dairyStocks : [];
+          setDemoStockAtDairy(dairyStocks);
+        } else {
+          setDemoStockAtDairy([]);
+        }
+      },
+      (err) => {
+        console.error("Error loading dairy stock:", err);
+        setDemoStockAtDairy([]);
+      }
+    );
+
+    return () => dairyUnsub();
+  }, [selectedVillageid]);
+
   const handleCustomerInput = (e) => {
     const { name, value } = e.target;
     setCustomerInput(prev => ({ ...prev, [name]: value }));
@@ -364,30 +392,122 @@ export default function MemberPage() {
 
       {/* Search */}
       <div style={{ marginBottom: 20 }}>
-        <input
-          type="text"
-          placeholder="Search customers by name, mobile, or code..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
-        />
-        {searchTerm && filteredCustomers.length > 0 && (
-          <ul style={{ listStyle: "none", padding: 0, maxHeight: 200, overflowY: "auto", marginTop: 8, background: "#fff", borderRadius: 8, boxShadow: "0 2px 6px rgba(0,0,0,0.1)" }}>
-            {filteredCustomers.map(c => (
-              <li
-                key={c.id}
-                onClick={() => {
-                  setCustomerInput({ name: c.name || "", code: c.code || "", mobile: c.mobile || "", orderPackaging: c.orderPackaging || "", orderQty: c.orderQty || "", remarks: c.remarks || "" });
-                  setSearchTerm("");
+        <div style={{ position: "relative", maxWidth: "500px" }}>
+          <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
+            <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search by name, mobile, or code..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ 
+                width: "100%", 
+                padding: "12px 12px 12px 40px", 
+                borderRadius: 8, 
+                border: "2px solid #e0e7ff",
+                fontSize: "0.95em",
+                transition: "all 0.2s",
+                boxShadow: searchTerm ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
+                borderColor: searchTerm ? "#2563eb" : "#e0e7ff"
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "#2563eb";
+                e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
+              }}
+              onBlur={(e) => {
+                if (!searchTerm) {
+                  e.target.style.borderColor = "#e0e7ff";
+                  e.target.style.boxShadow = "none";
+                }
+              }}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  background: "none",
+                  border: "none",
+                  fontSize: "1.1em",
+                  cursor: "pointer",
+                  color: "#9ca3af",
+                  padding: "4px 8px",
+                  transition: "color 0.2s"
                 }}
-                style={{ padding: 10, cursor: "pointer", borderBottom: "1px solid #eee" }}
+                onMouseOver={(e) => e.target.style.color = "#2563eb"}
+                onMouseOut={(e) => e.target.style.color = "#9ca3af"}
               >
-                <strong>{c.name}</strong> — {c.mobile} ({c.code})
-              </li>
-            ))}
-          </ul>
-        )}
-        {searchTerm && filteredCustomers.length === 0 && <p style={{ color: "red", marginTop: 8 }}>No customers found</p>}
+                ✕
+              </button>
+            )}
+          </div>
+
+          {searchTerm && filteredCustomers.length > 0 && (
+            <ul style={{ 
+              listStyle: "none", 
+              padding: "8px 0", 
+              maxHeight: 320, 
+              overflowY: "auto", 
+              marginTop: 8, 
+              background: "#fff", 
+              borderRadius: 8, 
+              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.2)",
+              border: "1px solid #e0e7ff",
+              position: "relative",
+              zIndex: 10
+            }}>
+              {filteredCustomers.map((c, idx) => (
+                <li
+                  key={c.id}
+                  onClick={() => {
+                    setCustomerInput({ name: c.name || "", code: c.code || "", mobile: c.mobile || "", orderPackaging: c.orderPackaging || "", orderQty: c.orderQty || "", remarks: c.remarks || "" });
+                    setSearchTerm("");
+                  }}
+                  style={{ 
+                    padding: "12px 16px", 
+                    cursor: "pointer", 
+                    borderBottom: idx < filteredCustomers.length - 1 ? "1px solid #f0f0f0" : "none",
+                    transition: "all 0.15s",
+                    background: "#fff"
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = "#f0f7ff";
+                    e.currentTarget.style.paddingLeft = "20px";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = "#fff";
+                    e.currentTarget.style.paddingLeft = "16px";
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#1f2937", fontSize: "0.95em" }}>{c.name}</div>
+                      <div style={{ fontSize: "0.8em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile} {c.code && `• Code: ${c.code}`}</div>
+                    </div>
+                    <div style={{ color: "#2563eb", fontSize: "1em" }}>→</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {searchTerm && filteredCustomers.length === 0 && (
+            <div style={{ 
+              marginTop: 8, 
+              padding: "16px", 
+              background: "#fef3c7", 
+              border: "1px solid #fcd34d",
+              borderRadius: 8, 
+              textAlign: "center",
+              color: "#92400e"
+            }}>
+              <div style={{ fontSize: "1.4em", marginBottom: 6 }}>🔍</div>
+              <div style={{ fontWeight: 600 }}>No customers found</div>
+              <div style={{ fontSize: "0.85em", marginTop: 4, opacity: 0.8 }}>Try searching with a different name, mobile, or code</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Customer Form */}
@@ -548,90 +668,125 @@ export default function MemberPage() {
         </div>
       )}
 
-      {/* Stock Inventory by Packaging Dashboard */}
-      <div style={{ marginTop: 32, marginBottom: 28 }}>
-        <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 20, fontSize: "1.5rem" }}>📦 STOCK INVENTORY BY PACKAGING</h3>
-        <div style={{ overflowX: "auto", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
-                <th style={{ padding: "14px 16px", textAlign: "left", borderRight: "1px solid #1e40af" }}>📌 Package Name</th>
-                <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>📦 Taken</th>
-                <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>💰 Sold</th>
-                <th style={{ padding: "14px 16px", textAlign: "center" }}>📈 Remaining</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const packagingMap = {};
+      {/* Stock Inventory by Packaging Dashboard - Synced with DemoSalesList */}
+      {selectedVillageid && (
+        <div style={{ marginTop: 32, marginBottom: 28 }}>
+          <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 20, fontSize: "1.5rem" }}>📦 STOCK INVENTORY BY PACKAGING</h3>
+          <div style={{ overflowX: "auto", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
+                  <th style={{ padding: "14px 16px", textAlign: "left", borderRight: "1px solid #1e40af" }}>📌 Package Name</th>
+                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>📦 Taken</th>
+                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>💰 Sold</th>
+                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>🏭 At Dairy</th>
+                  <th style={{ padding: "14px 16px", textAlign: "center", borderRight: "1px solid #1e40af" }}>↩️ Returned</th>
+                  <th style={{ padding: "14px 16px", textAlign: "center" }}>📈 Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const packagingMap = {};
 
-                // Process taken stock
-                demoStockTaken.forEach(s => {
-                  if (!packagingMap[s.packaging]) {
-                    packagingMap[s.packaging] = { taken: 0, sold: 0 };
-                  }
-                  packagingMap[s.packaging].taken += parseInt(s.quantity) || 0;
-                });
-
-                // Process sold from manual customers
-                customers.forEach(c => {
-                  if (c.orderPackaging) {
-                    if (!packagingMap[c.orderPackaging]) {
-                      packagingMap[c.orderPackaging] = { taken: 0, sold: 0 };
+                  // Process taken stock from Firebase (synced from DemoSalesList)
+                  demoStockTaken.forEach(s => {
+                    if (!packagingMap[s.packaging]) {
+                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
                     }
-                    packagingMap[c.orderPackaging].sold += parseInt(c.orderQty) || 0;
-                  }
-                });
+                    packagingMap[s.packaging].taken += parseInt(s.quantity) || 0;
+                  });
 
-                // Process sold from excel customers
-                excelCustomers.forEach(c => {
-                  if (c.orderPackaging) {
-                    if (!packagingMap[c.orderPackaging]) {
-                      packagingMap[c.orderPackaging] = { taken: 0, sold: 0 };
+                  // Process dairy stock from Firebase (synced from DemoSalesList)
+                  demoStockAtDairy.forEach(s => {
+                    if (!packagingMap[s.packaging]) {
+                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
                     }
-                    packagingMap[c.orderPackaging].sold += parseInt(c.orderQty) || 0;
+                    packagingMap[s.packaging].dairy += parseInt(s.quantity) || 0;
+                  });
+
+                  // Process returned stock
+                  stockReturned.forEach(s => {
+                    if (!packagingMap[s.packaging]) {
+                      packagingMap[s.packaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
+                    }
+                    packagingMap[s.packaging].returned += parseInt(s.quantity) || 0;
+                  });
+
+                  // Process sold from manual and excel customers (including scheme handling)
+                  const processCustomer = (c) => {
+                    if (c.orderPackaging) {
+                      // Check if it's a scheme
+                      const scheme = onePlusOneSchemes.find(s => s.label === c.orderPackaging);
+                      const qty = parseInt(c.orderQty) || 1;
+
+                      if (scheme && scheme.parts) {
+                        // Deduct each part of the scheme
+                        scheme.parts.forEach(part => {
+                          if (!packagingMap[part]) {
+                            packagingMap[part] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
+                          }
+                          packagingMap[part].sold += qty; // qty of schemes = qty of each part
+                        });
+                      } else {
+                        // Single packaging
+                        if (!packagingMap[c.orderPackaging]) {
+                          packagingMap[c.orderPackaging] = { taken: 0, sold: 0, dairy: 0, returned: 0 };
+                        }
+                        packagingMap[c.orderPackaging].sold += qty;
+                      }
+                    }
+                  };
+
+                  customers.forEach(processCustomer);
+                  excelCustomers.forEach(processCustomer);
+
+                  // Convert to array and sort
+                  const packagingArray = Object.keys(packagingMap).map(pkg => ({
+                    name: pkg,
+                    ...packagingMap[pkg],
+                    remaining: packagingMap[pkg].taken - packagingMap[pkg].sold - packagingMap[pkg].dairy + packagingMap[pkg].returned
+                  })).sort((a, b) => a.name.localeCompare(b.name));
+
+                  if (packagingArray.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan="6" style={{ padding: "20px", textAlign: "center", color: "#9ca3af" }}>
+                          No stock data available. Add stock from DemoSalesList or other sources.
+                        </td>
+                      </tr>
+                    );
                   }
-                });
 
-                // Convert to array and sort
-                const packagingArray = Object.keys(packagingMap).map(pkg => ({
-                  name: pkg,
-                  ...packagingMap[pkg],
-                  remaining: packagingMap[pkg].taken - packagingMap[pkg].sold
-                })).sort((a, b) => a.name.localeCompare(b.name));
-
-                if (packagingArray.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan="4" style={{ padding: "20px", textAlign: "center", color: "#9ca3af" }}>
-                        No stock data available
+                  return packagingArray.map((pkg, idx) => (
+                    <tr key={pkg.name} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
+                      <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1f2937" }}>{pkg.name}</td>
+                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#0284c7" }}>{pkg.taken}</td>
+                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#a855f7" }}>{pkg.sold}</td>
+                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#ea580c" }}>{pkg.dairy}</td>
+                      <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#16a34a" }}>{pkg.returned}</td>
+                      <td style={{ 
+                        padding: "14px 16px", 
+                        textAlign: "center", 
+                        fontWeight: 700, 
+                        color: pkg.remaining >= 0 ? "#22c55e" : "#ef4444",
+                        background: pkg.remaining >= 0 ? "#f0fdf4" : "#fef2f2",
+                        borderRadius: "6px"
+                      }}>
+                        {pkg.remaining} {pkg.remaining < 0 && "⚠️"}
                       </td>
                     </tr>
-                  );
-                }
-
-                return packagingArray.map((pkg, idx) => (
-                  <tr key={pkg.name} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1f2937" }}>{pkg.name}</td>
-                    <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#0284c7" }}>{pkg.taken}</td>
-                    <td style={{ padding: "14px 16px", textAlign: "center", fontWeight: 600, color: "#a855f7" }}>{pkg.sold}</td>
-                    <td style={{ 
-                      padding: "14px 16px", 
-                      textAlign: "center", 
-                      fontWeight: 700, 
-                      color: pkg.remaining >= 0 ? "#22c55e" : "#ef4444",
-                      background: pkg.remaining >= 0 ? "#f0fdf4" : "#fef2f2",
-                      borderRadius: "6px"
-                    }}>
-                      {pkg.remaining}
-                    </td>
-                  </tr>
-                ));
-              })()}
-            </tbody>
-          </table>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 12, padding: "12px 16px", background: "rgba(2, 132, 199, 0.1)", borderRadius: 8, border: "1px solid #0284c7" }}>
+            <p style={{ margin: 0, color: "#0369a1", fontSize: "0.9em", fontWeight: 600 }}>
+              💡 <strong>Synced with DemoSalesList:</strong> Stock data automatically syncs across both pages. Add stock in DemoSalesList and it will appear here.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
