@@ -221,6 +221,31 @@ useEffect(() => {
   return () => unsub();
 }, [selectedVillageId]);
 
+// Real-time listener for stock at dairy from Firebase
+useEffect(() => {
+  if (!selectedVillageId) {
+    setStockAtDairy([]);
+    return;
+  }
+
+  const unsub = onSnapshot(
+    doc(db, "villageStocks", selectedVillageId),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setStockAtDairy(Array.isArray(data.dairyStocks) ? data.dairyStocks : []);
+      } else {
+        setStockAtDairy([]);
+      }
+    },
+    (err) => {
+      console.error("Error loading dairy stock:", err);
+      setStockAtDairy([]);
+    }
+  );
+
+  return () => unsub();
+}, [selectedVillageId]);
 
   // Listen to customers for selectedVillageId and update entryBy in demoInfo
   useEffect(() => {
@@ -838,8 +863,21 @@ useEffect(() => {
     const pkg = stockInput.packaging;
     
     // Add to stockAtDairy (NO deduction from Stock Taken - dairy is just where the stock is stored)
-    setStockAtDairy((prev) => [...prev, { packaging: pkg, quantity: String(qty) }]);
+    const updatedStockAtDairy = [...stockAtDairy, { packaging: pkg, quantity: String(qty) }];
+    setStockAtDairy(updatedStockAtDairy);
     toast.success(`✅ Noted ${qty} ${pkg} stored at Dairy`);
+    
+    // Auto-save to Firebase
+    if (selectedVillageId) {
+      setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        dairyStocks: updatedStockAtDairy,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch((err) => {
+        console.error('Failed to save dairy stock:', err);
+      });
+    }
+    
     setStockInput(initialStock);
   };
 
@@ -852,6 +890,18 @@ useEffect(() => {
     setStockAtDairy((prev) => {
       const updated = prev.filter((_, i) => i !== idx);
       console.log("📦 Updated stockAtDairy:", updated);
+      
+      // Auto-save to Firebase
+      if (selectedVillageId) {
+        setDoc(doc(db, 'villageStocks', selectedVillageId), {
+          dairyStocks: updated,
+          villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch((err) => {
+          console.error('Failed to save dairy stock changes:', err);
+        });
+      }
+      
       return updated;
     });
   };
@@ -871,6 +921,17 @@ useEffect(() => {
     const updated = [...stockAtDairy];
     updated[index].quantity = String(newQuantity || 0);
     setStockAtDairy(updated);
+    
+    // Auto-save to Firebase
+    if (selectedVillageId) {
+      setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        dairyStocks: updated,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch((err) => {
+        console.error('Failed to save dairy stock changes:', err);
+      });
+    }
   };
 
 // Persist stock for the currently selected village
@@ -986,6 +1047,15 @@ const handleSelectExcelCustomer = (customer) => {
         stockReturned,
         savedAt: Timestamp.now(),
       });
+
+      // Clear stocks in Firebase after successful submission
+      if (selectedVillageId) {
+        await setDoc(doc(db, 'villageStocks', selectedVillageId), {
+          stocks: [],
+          dairyStocks: [],
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
 
       setMsg("Demo sales record submitted and saved to history!");
       setDemoInfo(initialDemoInfo);
