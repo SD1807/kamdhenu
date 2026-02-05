@@ -47,12 +47,82 @@ export default function MemberPage() {
 
 const packagingNames = getPackagingNames();
 
+// Ultra-aggressive compression for phone camera photos (1920x1080)
+// Target: Keep base64 string under 200KB for safe Firebase storage
+const compressImage = (base64String) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64String;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      
+      // For phone camera (1920x1080): reduce to 400x300 max
+      const maxWidth = 400;
+      const maxHeight = 300;
+      const ratio = Math.min(maxWidth / width, maxHeight / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Start with 30% quality for phone photos
+      let compressed = canvas.toDataURL('image/jpeg', 0.3);
+      let quality = 0.3;
+      
+      // Progressively reduce quality until under 200KB
+      while (compressed.length > 200000 && quality > 0.1) {
+        quality -= 0.05;
+        compressed = canvas.toDataURL('image/jpeg', quality);
+      }
+      
+      // If still too large, try even smaller dimensions
+      if (compressed.length > 200000) {
+        canvas.width = 300;
+        canvas.height = 225;
+        ctx.drawImage(img, 0, 0, 300, 225);
+        compressed = canvas.toDataURL('image/jpeg', 0.25);
+      }
+      
+      resolve(compressed);
+    };
+    img.onerror = () => {
+      resolve('');
+    };
+  });
+};
+
  const handleCustomerPhotoChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    
     const reader = new FileReader();
-    reader.onload = () => {
-      setCustomerInput((prev) => ({ ...prev, photo: reader.result }));
+    reader.onload = async () => {
+      try {
+        const base64String = reader.result;
+        const compressedBase64 = await compressImage(base64String);
+        
+        if (!compressedBase64) {
+          toast.error("Failed to compress image. Please try a different photo.");
+          return;
+        }
+        
+        const sizeKB = Math.round(compressedBase64.length / 1000);
+        
+        setCustomerInput((prev) => ({ 
+          ...prev, 
+          photo: compressedBase64,
+          photoPreview: compressedBase64
+        }));
+        toast.success(`Photo loaded and compressed to ${sizeKB}KB ✓`);
+      } catch (err) {
+        console.error("Photo compression error:", err);
+        toast.error("Failed to process photo");
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -394,8 +464,31 @@ const packagingNames = getPackagingNames();
 
                   </div>
                   {customerInput.photo && (
-                    <div style={{ marginTop: 6 }}>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
                       <img src={customerInput.photo} alt="preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerInput(prev => ({ ...prev, photo: '', photoPreview: '' }));
+                          toast.success("Photo removed");
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          background: '#ef4444',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '0.9em',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.background = '#dc2626'}
+                        onMouseOut={(e) => e.target.style.background = '#ef4444'}
+                        title="Delete photo"
+                      >
+                        ✕ Delete
+                      </button>
                     </div>
                   )}
                 </div>
