@@ -12,6 +12,8 @@ import {
   setDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
+import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
@@ -90,7 +92,7 @@ export default function MemberPage() {
     { label: "20 LTR STEEL + 20 LTR STEEL", key: "20S_20S", base: 3520 + 3520, offer: 6000, parts: ["20 LTR STEEL", "20 LTR STEEL"] },
   ];
 
-  const handleCustomerPhotoChange = async (e) => {
+   const handleCustomerPhotoChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
@@ -862,3 +864,4 @@ export default function MemberPage() {
     </div>
   );
 }
+ 
