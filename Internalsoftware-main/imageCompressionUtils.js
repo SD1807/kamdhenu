@@ -2,7 +2,7 @@
  * Image Compression Utility
  * Compresses images before upload to reduce file size
  */
-
+ 
 /**
  * Compress image and convert to base64
  * @param {File} file - Image file to compress
