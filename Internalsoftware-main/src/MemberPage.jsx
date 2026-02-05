@@ -13,12 +13,10 @@ import {
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
-import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
 import { VillageSelector } from "./components/stock/VillageSelector";
-import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 import { compressImage, getBase64SizeInMB } from "./imageCompressionUtils";
 
 export default function MemberPage() {
