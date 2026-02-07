@@ -110,3 +110,4 @@ export const getBase64SizeInMB = (base64String) => {
   const sizeInBytes = (base64WithoutPrefix.length * 3) / 4;
   return getFileSizeInMB(sizeInBytes);
 };
+ 
