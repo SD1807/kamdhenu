@@ -13,6 +13,12 @@
  */
 export const compressImage = (file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) => {
   return new Promise((resolve, reject) => {
+    // Validate input
+    if (!file || !(file instanceof File)) {
+      reject(new Error('Invalid file object'));
+      return;
+    }
+
     const reader = new FileReader();
     
     reader.onload = (event) => {
@@ -43,8 +49,18 @@ export const compressImage = (file, maxWidth = 1200, maxHeight = 1200, quality =
         ctx.drawImage(img, 0, 0, width, height);
 
         // Convert to base64 with compression
-        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-        resolve(compressedBase64);
+        try {
+          const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+          
+          if (!compressedBase64) {
+            reject(new Error('Failed to generate compressed image'));
+            return;
+          }
+          
+          resolve(compressedBase64);
+        } catch (err) {
+          reject(new Error('Canvas compression failed: ' + err.message));
+        }
       };
 
       img.onerror = () => {
@@ -77,8 +93,20 @@ export const getFileSizeInMB = (sizeInBytes) => {
  * @returns {number} - Size in MB
  */
 export const getBase64SizeInMB = (base64String) => {
+  // Validate input
+  if (!base64String || typeof base64String !== 'string') {
+    return 0;
+  }
+
   // Remove data URL prefix
-  const base64WithoutPrefix = base64String.split(',')[1];
+  const parts = base64String.split(',');
+  const base64WithoutPrefix = parts.length > 1 ? parts[1] : base64String;
+  
+  // Ensure we have valid base64
+  if (!base64WithoutPrefix) {
+    return 0;
+  }
+
   const sizeInBytes = (base64WithoutPrefix.length * 3) / 4;
   return getFileSizeInMB(sizeInBytes);
 };

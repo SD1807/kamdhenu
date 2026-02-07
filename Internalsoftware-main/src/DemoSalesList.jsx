@@ -303,54 +303,7 @@ useEffect(() => {
     setCustomerInput((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Ultra-aggressive compression for phone camera photos (1920x1080)
-  // Target: Keep base64 string under 200KB for safe Firebase storage
-  const compressImage = (base64String) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = base64String;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        
-        // For phone camera (1920x1080): reduce to 400x300 max
-        const maxWidth = 400;
-        const maxHeight = 300;
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Start with 30% quality for phone photos
-        let compressed = canvas.toDataURL('image/jpeg', 0.3);
-        let quality = 0.3;
-        
-        // Progressively reduce quality until under 200KB
-        while (compressed.length > 200000 && quality > 0.1) {
-          quality -= 0.05;
-          compressed = canvas.toDataURL('image/jpeg', quality);
-        }
-        
-        // If still too large, try even smaller dimensions
-        if (compressed.length > 200000) {
-          canvas.width = 300;
-          canvas.height = 225;
-          ctx.drawImage(img, 0, 0, 300, 225);
-          compressed = canvas.toDataURL('image/jpeg', 0.25);
-        }
-        
-        resolve(compressed);
-      };
-      img.onerror = () => {
-        resolve('');
-      };
-    });
-  };
+
 
   const handleCustomerPhotoChange = async (e) => {
     const file = e.target.files && e.target.files[0];
