@@ -3,10 +3,9 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 import notoSansGujarati from "./fonts/NotoSansGujarati-Regular.js";
 import { saveAs } from "file-saver";
-import { where, writeBatch, collection, addDoc, Timestamp, doc, getDocs ,  serverTimestamp, query, onSnapshot, getDoc, setDoc } from "firebase/firestore";
+import { where, writeBatch, collection, addDoc, Timestamp, doc, getDocs, serverTimestamp, query, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-const storage = getStorage();
 import Navbar from "./Navbar";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import "./form.css";
@@ -16,6 +15,8 @@ import ExcelJS from "exceljs";
 import { VillageSelector } from "./components/stock/VillageSelector";
 import { PACKAGING_DATA, getPriceByName, getPackagingNames, getLitresByName } from "./config/packagingConfig";
 import { compressImage, getBase64SizeInMB } from "./imageCompressionUtils";
+
+const storage = getStorage();
 
 // Get packaging names array for dropdown display (without prices)
 const packagingNames = getPackagingNames();
@@ -1440,14 +1441,14 @@ const handleSelectExcelCustomer = (customer) => {
 
   // WhatsApp summary
   const handleGenerateSummary = () => {
-    // Prefer demoInfo.village (set by handleVillageSelect). 
-// If not present, try to find the name from villageOptions using selectedVillageId.
-const villageName =
-  demoInfo.village ||
-  (villageOptions.find(v => v.id === selectedVillageId)?.name) ||
-  "Village";
+    // Prefer demoInfo.village (set by handleVillageSelect).
+    // If not present, try to find the name from villageOptions using selectedVillageId.
+    const villageName =
+      demoInfo.village ||
+      (villageOptions.find(v => v.id === selectedVillageId)?.name) ||
+      "Village";
 
-  // Group customer orders by packaging
+    // Group customer orders by packaging
   const salesSummary = {};
   customers.forEach(c => {
     if (!c.orderPackaging || !c.orderQty) return;
@@ -3772,4 +3773,4 @@ ${paymentLines || "—"}
   );
 };
 
-export default DemoSalesList; 
+export default DemoSalesList;
