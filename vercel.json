@@ -2,6 +2,8 @@
   "buildCommand": "cd Internalsoftware-main && npm run build",
   "outputDirectory": "Internalsoftware-main/dist",
   "installCommand": "cd Internalsoftware-main && npm install",
-  "devCommand": "cd Internalsoftware-main && npm run dev",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
 }
