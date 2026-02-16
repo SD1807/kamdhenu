@@ -169,6 +169,44 @@ const [selectedVillage, setSelectedVillage] = useState("");
 
 
 const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [filterByMember, setFilterByMember] = useState("all");
+
+  // Get current user email from auth
+  useEffect(() => {
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      setCurrentUserEmail(currentUser.email || "");
+    }
+  }, []);
+
+  // Check if current user can edit a customer
+  const canEditCustomer = (customer) => {
+    return customer.addedByEmail === currentUserEmail;
+  };
+
+  // Get unique members list and compute filtered customers
+  const uniqueMembers = [
+    ...new Map(
+      customers
+        .filter(c => c.addedByEmail || c.addedByUsername || c.addedByDisplayName)
+        .map(c => [c.addedByEmail || c.addedByUsername || c.addedByDisplayName, { email: c.addedByEmail, username: c.addedByUsername, displayName: c.addedByDisplayName }])
+    ).values()
+  ].sort((a, b) => {
+    if (a.email === currentUserEmail) return -1;
+    if (b.email === currentUserEmail) return 1;
+    return 0;
+  });
+
+  // Filter customers based on selected member
+  const filteredCustomersByMember = filterByMember === "all"
+    ? [
+        ...customers.filter(c => c.addedByEmail === currentUserEmail),
+        ...customers.filter(c => c.addedByEmail !== currentUserEmail)
+      ]
+    : customers.filter(c => (c.addedByEmail || c.addedByUsername || c.addedByDisplayName) === filterByMember);
+
   // Fetch all villages for dropdown and set selectedVillageId when demoInfo.village changes
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "villages"), (snapshot) => {
@@ -297,7 +335,6 @@ useEffect(() => {
     const found = villageOptions.find(v => v.id === id);
     setDemoInfo(prev => ({ ...prev, village: found ? found.name : "" }));
   };
-
 
   const handleCustomerInput = (e) => {
     const { name, value } = e.target;
@@ -575,6 +612,15 @@ useEffect(() => {
     return;
   }
 
+  // Get current user info
+  const auth = getAuth();
+  const user = auth.currentUser;
+  let username = user?.reloadUserInfo?.screenName || user?.providerData?.[0]?.screenName || "";
+  if (!username && user) username = user?.displayName || "";
+  const displayName = user?.displayName || "";
+  const email = user?.email || "";
+  const addedBy = username || displayName || email || "Unknown";
+
   const newCustomer = { ...customerInput };
   // attach scheme information if applicable
   // Detect if selected packaging is a predefined 1+1 combo
@@ -599,6 +645,10 @@ useEffect(() => {
         photo: photoToSave,
         photoPreview: null, // Don't save preview to database
         villageId: selectedVillageId,
+        addedBy: addedBy,
+        addedByUsername: username,
+        addedByDisplayName: displayName,
+        addedByEmail: email,
         createdAt: serverTimestamp(),
       });
       toast.success("✅ Customer added to Firestore");
@@ -993,7 +1043,17 @@ const handleUpdateCustomer = async () => {
     return;
   }
   try {
-    await updateDoc(doc(db, "customers", editingCustomerId), { ...customerInput });
+    // Keep the original addedBy fields when updating
+    const updateData = { ...customerInput };
+    // Preserve the original addedBy fields
+    const originalCustomer = customers.find(c => c.id === editingCustomerId);
+    if (originalCustomer) {
+      updateData.addedBy = originalCustomer.addedBy;
+      updateData.addedByEmail = originalCustomer.addedByEmail;
+      updateData.addedByUsername = originalCustomer.addedByUsername;
+      updateData.addedByDisplayName = originalCustomer.addedByDisplayName;
+    }
+    await updateDoc(doc(db, "customers", editingCustomerId), updateData);
     toast.success("Customer updated successfully");
    setEditingCustomerId(null);
 setCustomerInput(initialCustomer);
@@ -1491,14 +1551,14 @@ const handleSelectExcelCustomer = (customer) => {
   // Total payment collected
   const totalPayment = paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0);
 
-  // Grand total litres
+  // Grand total litres = customer sales + dairy stock
   const grandTotalLitres =
     customers.reduce((acc, c) => {
       const litres = getLitresByName(c.orderPackaging) || 0;
       const qty = parseInt(c.orderQty) || 0;
       return acc + litres * qty;
     }, 0) +
-    stockTaken.reduce((acc, s) => {
+    stockAtDairy.reduce((acc, s) => {
       const litres = getLitresByName(s.packaging) || 0;
       const qty = parseInt(s.quantity) || 0;
       return acc + litres * qty;
@@ -1509,7 +1569,7 @@ const handleSelectExcelCustomer = (customer) => {
 `𝗩𝗶𝗹𝗹𝗮𝗴𝗲 ${villageName} 𝗗𝗲𝗺𝗼 𝘀𝗲𝗹𝗹:- 
 ${salesLines || "—"}
 
-𝗦𝘁𝗼𝗰𝗸:- 
+STOCK AT DAIRY:-
 ${stockLines || "—"}
 
 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 𝗖𝗼𝗹𝗹𝗲𝗰𝘁𝗲𝗱:- 
@@ -2365,117 +2425,34 @@ ${paymentLines || "—"}
             {/* Customer List - Responsive */}
             {customers.length > 0 && (
               <div style={{ marginTop: 18 }}>
-                <style>{`
-                  @media (min-width: 768px) {
-                    .demo-sales-desktop-table { display: block !important; }
-                  }
-                `}</style>
-                {/* Desktop Table */}
-                <div className="demo-sales-desktop-table" style={{ display: "none", overflowX: "auto" }}>
-                  <table
+                {/* Member Filter */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>Filter by Member:</label>
+                  <select
+                    value={filterByMember}
+                    onChange={(e) => setFilterByMember(e.target.value)}
                     style={{
                       width: "100%",
-                      borderCollapse: "collapse",
-                      textAlign: "center",
+                      padding: "8px 12px",
+                      border: "1px solid #d1d5db",
+                      borderRadius: 6,
+                      fontSize: "0.95em",
                       background: "#fff",
-                      borderRadius: 8,
-                      boxShadow: "0 1px 6px #2563eb11",
+                      cursor: "pointer"
                     }}
                   >
-                    <thead>
-                      <tr style={{ background: "#f7fafd", fontWeight: 700, color: "#174ea6" }}>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Name</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Photo</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Code</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Mobile</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Packaging</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Qty</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Total</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Remarks</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Payment</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Entry By</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Edit</th>
-                        <th style={{ padding: "8px 4px", fontSize: "0.85em" }}>Remove</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customers.map((c, idx) => {
-                        const qty = parseInt(c.orderQty) || 0;
-                        let rate = 0;
-                        if (c.appliedPrice) {
-                          rate = parseInt(c.appliedPrice) || 0;
-                        } else {
-                          rate = getPriceByName(c.orderPackaging) || 0;
-                        }
-                        const total = rate * qty;
-
-                        return (
-                          <tr
-                            key={idx}
-                            className="customer-entry"
-                            style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff", fontSize: "0.9em" }}
-                          >
-                            <td style={{ padding: "6px 4px" }}>{c.name}</td>
-                            <td style={{ padding: "6px 4px" }}>
-                              {c.photo ? (
-                                <img src={c.photo} alt="thumb" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />
-                              ) : (
-                                <span style={{ color: '#9ca3af' }}>—</span>
-                              )}
-                            </td>
-                            <td style={{ padding: "6px 4px" }}>{c.code}</td>
-                            <td style={{ padding: "6px 4px" }}>{c.mobile}</td>
-                            <td style={{ padding: "6px 4px" }}>{c.orderPackaging}</td>
-                            <td style={{ padding: "6px 4px" }}>{c.orderQty}</td>
-                            <td style={{ padding: "6px 4px" }}>
-                              <strong>₹{total}</strong>
-                            </td>
-                            <td style={{ padding: "6px 4px" }}>{c.remarks}</td>
-                            <td style={{ padding: "6px 4px", fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || '—'}</td>
-                            <td style={{ padding: "6px 4px", color:'#2563eb', fontWeight:600, fontSize: "0.85em" }}>{c.addedBy || demoInfo.entryBy || ''}</td>
-                            <td style={{ padding: "6px 4px" }}>
-                              <button
-                                type="button"
-                                style={{ background: "#2563eb", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: "0.8em" }}
-                                onClick={() => handleEditCustomer(c)}
-                              >
-                                Edit
-                              </button>
-                            </td>
-                            <td style={{ padding: "6px 4px" }}>
-                              <button
-                                type="button"
-                                style={{ background: "red", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: "0.8em" }}
-                                onClick={() => handleRemoveCustomer(c.id)}
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr style={{ fontWeight: "bold", background: "#f7fafd" }}>
-                        <td colSpan="6" style={{ padding: "12px 8px", textAlign: "right" }}>Grand Total:</td>
-                        <td style={{ padding: "12px 8px", color: "#2563eb" }}>
-                          ₹{customers.reduce((acc, c) => {
-                            let rate = 0;
-                            if (c.appliedPrice) {
-                              rate = parseInt(c.appliedPrice) || 0;
-                            } else {
-                              rate = getPriceByName(c.orderPackaging) || 0;
-                            }
-                            const qty = parseInt(c.orderQty) || 0;
-                            return acc + rate * qty;
-                          }, 0)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                    <option value="all">All Members</option>
+                    {uniqueMembers.map((member) => (
+                      <option key={member.email} value={member.email || member.username || member.displayName}>
+                        {member.email === currentUserEmail ? `👤 ${member.username || member.displayName || member.email} (You)` : `👤 ${member.username || member.displayName || member.email}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Mobile Card View */}
+                {/* Card View */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-                  {customers.map((c, idx) => {
+                  {filteredCustomersByMember.map((c, idx) => {
                     const qty = parseInt(c.orderQty) || 0;
                     let rate = 0;
                     if (c.appliedPrice) {
@@ -2544,45 +2521,51 @@ ${paymentLines || "—"}
 
                         {/* Entry By */}
                         <div style={{ fontSize: "0.8em", color: "#6b7280", marginBottom: 10 }}>
-                          👤 By: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedBy || demoInfo.entryBy || ''}</span>
+                          👤 By: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy || demoInfo.entryBy || ''}</span>
                         </div>
 
                         {/* Action Buttons */}
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            type="button"
-                            style={{
-                              flex: 1,
-                              background: "#2563eb",
-                              color: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "none",
-                              fontWeight: 600,
-                              fontSize: "0.9em",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => handleEditCustomer(c)}
-                          >
-                            ✏️ Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={{
-                              flex: 1,
-                              background: "#ef4444",
-                              color: "#fff",
-                              padding: "8px 12px",
-                              borderRadius: 6,
-                              border: "none",
-                              fontWeight: 600,
-                              fontSize: "0.9em",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => handleRemoveCustomer(c.id)}
-                          >
-                            🗑️ Remove
-                          </button>
+                          {canEditCustomer(c) ? (
+                            <>
+                              <button
+                                type="button"
+                                style={{
+                                  flex: 1,
+                                  background: "#2563eb",
+                                  color: "#fff",
+                                  padding: "8px 12px",
+                                  borderRadius: 6,
+                                  border: "none",
+                                  fontWeight: 600,
+                                  fontSize: "0.9em",
+                                  cursor: "pointer",
+                                }}
+                                onClick={() => handleEditCustomer(c)}
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                type="button"
+                                style={{
+                                  flex: 1,
+                                  background: "#ef4444",
+                                  color: "#fff",
+                                  padding: "8px 12px",
+                                  borderRadius: 6,
+                                  border: "none",
+                                  fontWeight: 600,
+                                  fontSize: "0.9em",
+                                  cursor: "pointer",
+                                }}
+                                onClick={() => handleRemoveCustomer(c.id)}
+                              >
+                                🗑️ Remove
+                              </button>
+                            </>
+                          ) : (
+                            <div style={{ width: "100%", textAlign: "center", fontSize: "0.85em", color: "#9ca3af", padding: "8px 12px" }}>Added by {c.addedByUsername || c.addedByDisplayName || c.addedBy}</div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2593,7 +2576,7 @@ ${paymentLines || "—"}
                 <div style={{ marginTop: 14, padding: 14, background: "linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%)", border: "2px solid #0284c7", borderRadius: 8, textAlign: "center" }}>
                   <div style={{ color: "#0369a1", fontSize: "0.9em", fontWeight: 600, marginBottom: 6 }}>Grand Total</div>
                   <div style={{ fontSize: "1.5em", fontWeight: 700, color: "#1e40af" }}>
-                    ₹{customers.reduce((acc, c) => {
+                    ₹{filteredCustomersByMember.reduce((acc, c) => {
                       let rate = 0;
                       if (c.appliedPrice) {
                         rate = parseInt(c.appliedPrice) || 0;

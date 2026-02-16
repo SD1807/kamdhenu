@@ -9,13 +9,16 @@ import {
   where,
   getDocs,
   doc,
-  setDoc
+  setDoc,
+  deleteDoc,
+  updateDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
+import { toast } from "react-toastify";
 import { VillageSelector } from "./components/stock/VillageSelector";
 import { compressImage, getBase64SizeInMB } from "./imageCompressionUtils";
 
@@ -33,6 +36,9 @@ export default function MemberPage() {
   const [paymentsCollected, setPaymentsCollected] = useState([]);
   const [remainingStockList, setRemainingStockList] = useState([]);
   
+  // Current user email for permission checking
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  
   const [stockAtDairyInput, setStockAtDairyInput] = useState({ packaging: "", quantity: "" });
   const [returnedStockInput, setReturnedStockInput] = useState({ packaging: "", quantity: "" });
   const [paymentInput, setPaymentInput] = useState({ amount: "", mode: "", givenBy: "", takenBy: "" });
@@ -46,6 +52,46 @@ export default function MemberPage() {
     remarks: "",
     paymentMethod: "",
   });
+
+  // State for editing customer
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+
+  // State for filtering by member
+  const [filterByMember, setFilterByMember] = useState("all");
+
+  // Get unique list of members who added customers
+  const uniqueMembers = Array.from(
+    new Map(
+      customers.map(c => [
+        c.addedByEmail,
+        {
+          email: c.addedByEmail,
+          name: c.addedByUsername || c.addedByDisplayName || c.addedBy || "Unknown",
+        }
+      ])
+    ).values()
+  ).sort((a, b) => {
+    // Sort: current user first, then others alphabetically
+    if (a.email === currentUserEmail) return -1;
+    if (b.email === currentUserEmail) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // Filter customers based on selected member
+  const filteredCustomersByMember = (() => {
+    let filtered = customers;
+    if (filterByMember !== "all") {
+      filtered = customers.filter(c => c.addedByEmail === filterByMember);
+    } else {
+      // Sort so current user's customers come first
+      filtered = [...customers].sort((a, b) => {
+        if (a.addedByEmail === currentUserEmail && b.addedByEmail !== currentUserEmail) return -1;
+        if (a.addedByEmail !== currentUserEmail && b.addedByEmail === currentUserEmail) return 1;
+        return 0;
+      });
+    }
+    return filtered;
+  })();
 
   // Get packaging names from config (without prices)
   const packagingNames = getPackagingNames();
@@ -132,6 +178,18 @@ export default function MemberPage() {
       alert('Photo processing failed: ' + (err.message || err));
     }
   };
+
+  // 🔹 Get current user email for permission checking
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      if (user) {
+        setCurrentUserEmail(user.email);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // 🔹 Fetch villages
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "villages"), snapshot => {
@@ -297,10 +355,78 @@ export default function MemberPage() {
     reader.readAsArrayBuffer(file);
   };
 
+  // 🔹 Check if current user can edit/delete this customer
+  const canEditCustomer = (customer) => {
+    if (!currentUserEmail) return false;
+    return customer.addedByEmail === currentUserEmail;
+  };
+
+  // 🔹 Edit Customer - Load customer data into form
+  const handleEditCustomer = (customer) => {
+    setEditingCustomerId(customer.id);
+    setCustomerInput({
+      name: customer.name,
+      code: customer.code || "",
+      mobile: customer.mobile,
+      orderPackaging: customer.orderPackaging || "",
+      orderQty: customer.orderQty || "",
+      remarks: customer.remarks || "",
+      paymentMethod: customer.paymentMethod || "",
+      photo: customer.photo || null,
+    });
+    // Scroll to form
+    document.querySelector('h3')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // 🔹 Update Customer
+  const handleUpdateCustomer = async () => {
+    if (!editingCustomerId) return;
+    if (uploadingPhoto) { alert('Please wait until photo upload completes'); return; }
+    if (!customerInput.name.trim() || !customerInput.mobile.trim()) { alert("Fill required fields"); return; }
+
+    try {
+      await updateDoc(doc(db, "customers", editingCustomerId), {
+        name: customerInput.name,
+        code: customerInput.code || "",
+        mobile: customerInput.mobile,
+        orderPackaging: customerInput.orderPackaging || "",
+        orderQty: customerInput.orderQty || "",
+        photo: customerInput.photo || null,
+        remarks: customerInput.remarks || "",
+        paymentMethod: customerInput.paymentMethod || "",
+      });
+      toast.success("Customer updated successfully");
+      setEditingCustomerId(null);
+      setCustomerInput({ name: "", code: "", mobile: "", orderPackaging: "", orderQty: "", remarks: "", paymentMethod: "", photo: null });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update customer");
+    }
+  };
+
+  // 🔹 Delete Customer
+  const handleRemoveCustomer = async (customerId) => {
+    if (!window.confirm("Are you sure you want to delete this customer?")) return;
+
+    try {
+      await deleteDoc(doc(db, "customers", customerId));
+      toast.success("Customer removed successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove customer");
+    }
+  };
+
   const handleSaveCustomer = async () => {
     if (!selectedVillageid) { alert("Select a village first"); return; }
     if (uploadingPhoto) { alert('Please wait until photo upload completes'); return; }
     if (!customerInput.name.trim() || !customerInput.mobile.trim()) { alert("Fill required fields"); return; }
+
+    // If editing, call update instead
+    if (editingCustomerId) {
+      await handleUpdateCustomer();
+      return;
+    }
 
     const auth = getAuth();
     const user = auth.currentUser;
@@ -512,7 +638,7 @@ export default function MemberPage() {
 
       {/* Customer Form */}
       <div style={{ marginBottom: 20, background: "#e3eefd", padding: 18, borderRadius: 8, border: "2px solid #2563eb" }}>
-        <h3 style={{ margin: "0 0 16px 0", color: "#174ea6", fontWeight: 700, fontSize: "1.3rem" }}>📝 Add Customer</h3>
+        <h3 style={{ margin: "0 0 16px 0", color: "#174ea6", fontWeight: 700, fontSize: "1.3rem" }}>📝 {editingCustomerId ? "Edit Customer" : "Add Customer"}</h3>
         
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
           <div>
@@ -621,61 +747,62 @@ export default function MemberPage() {
         </div>
 
         <button style={{ marginTop: 14, width: "100%", background: "#16a34a", color: "#fff", padding: "12px 20px", borderRadius: 8, fontWeight: 700, fontSize: "1em", border: "none", cursor: "pointer", transition: "all 0.2s" }} onClick={handleSaveCustomer} onMouseOver={(e) => e.target.style.background = "#15803d"} onMouseOut={(e) => e.target.style.background = "#16a34a"}>
-          ✓ Add Customer
+          ✓ {editingCustomerId ? "Update Customer" : "Add Customer"}
         </button>
+        
+        {editingCustomerId && (
+          <button style={{ marginTop: 8, width: "100%", background: "#6b7280", color: "#fff", padding: "12px 20px", borderRadius: 8, fontWeight: 700, fontSize: "1em", border: "none", cursor: "pointer", transition: "all 0.2s" }} onClick={() => {
+            setEditingCustomerId(null);
+            setCustomerInput({ name: "", code: "", mobile: "", orderPackaging: "", orderQty: "", remarks: "", paymentMethod: "", photo: null });
+          }} onMouseOver={(e) => e.target.style.background = "#4b5563"} onMouseOut={(e) => e.target.style.background = "#6b7280"}>
+            ✕ Cancel
+          </button>
+        )}
       </div>
 
       {/* Customers Table - Responsive */}
       {customers.length > 0 && (
         <div style={{ marginTop: 24 }}>
-          <h3 style={{ color: "#174ea6", fontWeight: 700, marginBottom: 16 }}>👥 Added Customers ({customers.length})</h3>
-          
-          {/* Desktop Table */}
-          <style>{`
-            @media (min-width: 768px) {
-              .member-page-desktop-table { display: block !important; }
-            }
-          `}</style>
-          <div className="member-page-desktop-table" style={{ display: "none", borderRadius: 8, border: "2px solid #d1d5db", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#2563eb", fontWeight: 700, color: "#fff" }}>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Name</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Mobile</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Packaging</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Qty</th>
-                  <th style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Photo</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Remarks</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", borderRight: "1px solid #1e40af", fontSize: "0.95em" }}>Payment Method</th>
-                  <th style={{ padding: "12px 14px", textAlign: "left", fontSize: "0.95em" }}>Added By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.map((c, idx) => (
-                  <tr key={c.id} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: "#1f2937" }}>{c.name}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563" }}>{c.mobile}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563" }}>{c.orderPackaging}</td>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: "#2563eb" }}>{c.orderQty}</td>
-                    <td style={{ padding: "12px 14px", textAlign: "center" }}>
-                      {c.photo ? (
-                        <img src={c.photo} alt="customer" style={{ width: 50, height: 50, borderRadius: 6, objectFit: "cover", border: "1px solid #d1d5db" }} />
-                      ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "0.85em" }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "12px 14px", color: "#6b7280", fontSize: "0.9em" }}>{c.remarks || "-"}</td>
-                    <td style={{ padding: "12px 14px", fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1' }}>{c.paymentMethod || "—"}</td>
-                    <td style={{ padding: "12px 14px", color: "#4b5563", fontSize: "0.9em" }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h3 style={{ color: "#174ea6", fontWeight: 700, margin: 0 }}>👥 Added Customers ({filteredCustomersByMember.length})</h3>
+            
+            {/* Filter Dropdown */}
+            <select
+              value={filterByMember}
+              onChange={(e) => setFilterByMember(e.target.value)}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 6,
+                border: "1.5px solid #d1d5db",
+                background: "#fff",
+                fontSize: "0.95em",
+                fontWeight: 600,
+                color: "#1f2937",
+                cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                transition: "border-color 0.2s"
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "#2563eb";
+                e.target.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "#d1d5db";
+                e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+              }}
+            >
+              <option value="all">🔷 All Members</option>
+              {uniqueMembers.map((member) => (
+                <option key={member.email} value={member.email}>
+                  {member.email === currentUserEmail ? `👤 ${member.name} (You)` : `👤 ${member.name}`}
+                </option>
+              ))}
+            </select>
           </div>
-
-          {/* Mobile Card View */}
+          
+          {/* Card View */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-            {customers.map((c) => (
+            {filteredCustomersByMember.map((c) => (
               <div
                 key={c.id}
                 style={{
@@ -731,9 +858,52 @@ export default function MemberPage() {
                 )}
 
                 {/* Added By */}
-                <div style={{ fontSize: "0.8em", color: "#6b7280", paddingTop: 10, borderTop: "1px solid #e5e7eb" }}>
+                <div style={{ fontSize: "0.8em", color: "#6b7280", paddingTop: 10, borderTop: "1px solid #e5e7eb", marginBottom: 10 }}>
                   👤 Added by: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy}</span>
                 </div>
+                {/* Action Buttons */}
+                {canEditCustomer(c) && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button
+                      onClick={() => handleEditCustomer(c)}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        background: "#3b82f6",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: "0.85em",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => e.target.style.background = "#2563eb"}
+                      onMouseOut={(e) => e.target.style.background = "#3b82f6"}
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      onClick={() => handleRemoveCustomer(c.id)}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        background: "#ef4444",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 6,
+                        fontSize: "0.85em",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => e.target.style.background = "#dc2626"}
+                      onMouseOut={(e) => e.target.style.background = "#ef4444"}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
