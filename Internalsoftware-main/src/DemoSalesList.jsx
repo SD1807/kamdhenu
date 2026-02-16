@@ -171,6 +171,7 @@ const [selectedVillage, setSelectedVillage] = useState("");
 const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [filterByMember, setFilterByMember] = useState("all");
+  const [isDashboardCollapsed, setIsDashboardCollapsed] = useState(false);
 
   // Get current user email from auth
   useEffect(() => {
@@ -2738,24 +2739,51 @@ ${paymentLines || "—"}
               padding: "clamp(14px, 4vw, 20px)",
             }}
           >
-            <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1rem, 4vw, 1.15rem)" }}>
-              📊 Realtime Stock Dashboard
-            </h3>
-            <p style={{ marginTop: 8, color: "#6b7280", fontSize: "clamp(0.875rem, 3vw, 0.95rem)" }}>
-              Shows sold, returned, and remaining stock (derived from customers and village stock).
-            </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <h3 style={{ margin: 0, color: "#174ea6", fontWeight: 700, fontSize: "clamp(1rem, 4vw, 1.15rem)" }}>
+                📊 Realtime Stock Dashboard
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsDashboardCollapsed(!isDashboardCollapsed)}
+                style={{
+                  background: "#2563eb",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "6px 12px",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.9em",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  transition: "all 0.2s"
+                }}
+                onMouseOver={(e) => e.target.style.background = "#1d4ed8"}
+                onMouseOut={(e) => e.target.style.background = "#2563eb"}
+              >
+                {isDashboardCollapsed ? "▶ Expand" : "▼ Collapse"}
+              </button>
+            </div>
+            
+            {!isDashboardCollapsed && (
+              <>
+                <p style={{ marginTop: 8, color: "#6b7280", fontSize: "clamp(0.875rem, 3vw, 0.95rem)" }}>
+                  Shows sold, returned, and remaining stock (derived from customers and village stock).
+                </p>
 
-            <style>{`
-              @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-              }
-              .stock-dashboard-table {
-                animation: fadeIn 0.3s ease-out;
-              }
-            `}</style>
+                <style>{`
+                  @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                  }
+                  .stock-dashboard-table {
+                    animation: fadeIn 0.3s ease-out;
+                  }
+                `}</style>
 
-            <div className="stock-dashboard-table" style={{ marginTop: 12, overflowX: "auto" }}>
+                <div className="stock-dashboard-table" style={{ marginTop: 12, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "clamp(0.9rem, 3vw, 0.95rem)", minWidth: "100%" }}>
                 <thead>
                   <tr style={{ textAlign: "left", backgroundColor: "#f0f7ff", borderBottom: "3px solid #2563eb" }}>
@@ -2839,6 +2867,8 @@ ${paymentLines || "—"}
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
 
           {/* Payment Collection Section */}
