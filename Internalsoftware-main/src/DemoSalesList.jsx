@@ -525,6 +525,30 @@ useEffect(() => {
   const [soldSummary, setSoldSummary] = useState({});
   const [remainingStockList, setRemainingStockList] = useState([]);
 
+  // Handle global drag events for smooth dragging
+  useEffect(() => {
+    if (!isDraggingInsights) return;
+
+    const handleMouseMove = (e) => {
+      setInsightsPosition({
+        x: e.clientX - dragOffset.x,
+        y: e.clientY - dragOffset.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingInsights(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingInsights, dragOffset]);
+
 async function startDemo() {
   const villageName =
     demoInfo.village ||
@@ -2095,20 +2119,34 @@ ${paymentLines || "—"}
       <button
         type="button"
         onMouseDown={(e) => {
-          if (isInsightsSidebarCollapsed) {
-            const rect = e.currentTarget.getBoundingClientRect();
+          if (isInsightsSidebarCollapsed && !isDraggingInsights) {
+            // Get the parent container position
+            const container = e.currentTarget.parentElement;
+            const rect = container.getBoundingClientRect();
+            
+            // Calculate offset from click point to widget center
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
             setDragOffset({
-              x: e.clientX - rect.left,
-              y: e.clientY - rect.top,
+              x: e.clientX - centerX,
+              y: e.clientY - centerY,
             });
             setIsDraggingInsights(true);
-          } else {
-            setIsInsightsSidebarCollapsed(true);
+            e.preventDefault();
+            e.currentTarget.style.cursor = "grabbing";
+          }
+        }}
+        onMouseUp={(e) => {
+          if (isInsightsSidebarCollapsed) {
+            e.currentTarget.style.cursor = "grab";
           }
         }}
         onClick={() => {
-          if (!isDraggingInsights && isInsightsSidebarCollapsed) {
+          if (isInsightsSidebarCollapsed && !isDraggingInsights) {
             setIsInsightsSidebarCollapsed(false);
+          } else if (!isInsightsSidebarCollapsed) {
+            setIsInsightsSidebarCollapsed(true);
           }
         }}
         style={{
@@ -2124,7 +2162,7 @@ ${paymentLines || "—"}
           transition: "all 0.2s",
           lineHeight: 1,
         }}
-        title={isInsightsSidebarCollapsed ? "Drag to move / Click to expand" : "Click to close"}
+        title={isInsightsSidebarCollapsed ? "Drag to move • Click to expand" : "Click to close"}
       >
         {isInsightsSidebarCollapsed ? "📊" : "✕"}
       </button>
@@ -2152,29 +2190,6 @@ ${paymentLines || "—"}
         </div>
       )}
     </div>
-  )}
-
-  {/* Handle dragging for insights sidebar */}
-  {demoId && isDraggingInsights && (
-    <div
-      onMouseMove={(e) => {
-        setInsightsPosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y,
-        });
-      }}
-      onMouseUp={() => setIsDraggingInsights(false)}
-      onMouseLeave={() => setIsDraggingInsights(false)}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 49,
-        cursor: "grabbing",
-      }}
-    />
   )}
 
         {/* ========== STOCK TAKEN TO VILLAGE SECTION ========== */}
