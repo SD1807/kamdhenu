@@ -525,7 +525,7 @@ useEffect(() => {
   const [soldSummary, setSoldSummary] = useState({});
   const [remainingStockList, setRemainingStockList] = useState([]);
 
-  // Handle global drag events for smooth dragging
+  // Handle global drag events for smooth dragging (mouse and touch)
   useEffect(() => {
     if (!isDraggingInsights) return;
 
@@ -536,16 +536,34 @@ useEffect(() => {
       });
     };
 
+    const handleTouchMove = (e) => {
+      if (e.touches.length > 0) {
+        const touch = e.touches[0];
+        setInsightsPosition({
+          x: touch.clientX - dragOffset.x,
+          y: touch.clientY - dragOffset.y,
+        });
+      }
+    };
+
     const handleMouseUp = () => {
       setIsDraggingInsights(false);
     };
 
+    const handleTouchEnd = () => {
+      setIsDraggingInsights(false);
+    };
+
     window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
     window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("touchend", handleTouchEnd);
 
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDraggingInsights, dragOffset]);
 
@@ -2090,7 +2108,7 @@ ${paymentLines || "—"}
   Start Demo
   </button>
 
-  {/* ========== DEMO INSIGHTS SIDEBAR - DRAGGABLE ========== */}
+  {/* ========== DEMO INSIGHTS SIDEBAR - DRAGGABLE & MOBILE FRIENDLY ========== */}
   {demoId && (
     <div
       style={{
@@ -2101,18 +2119,21 @@ ${paymentLines || "—"}
         background: isInsightsSidebarCollapsed ? "#2563eb" : "#ffffff",
         border: isInsightsSidebarCollapsed ? "none" : "1px solid #e5e7eb",
         borderRadius: isInsightsSidebarCollapsed ? "50%" : "12px",
-        padding: isInsightsSidebarCollapsed ? "8px" : "14px",
+        padding: isInsightsSidebarCollapsed ? "10px" : "14px",
         boxShadow: isInsightsSidebarCollapsed 
           ? "0 6px 20px rgba(37, 99, 235, 0.3)" 
           : "0 4px 16px rgba(0, 0, 0, 0.12)",
-        width: isInsightsSidebarCollapsed ? "50px" : "auto",
-        height: isInsightsSidebarCollapsed ? "50px" : "auto",
+        width: isInsightsSidebarCollapsed ? "60px" : "auto",
+        height: isInsightsSidebarCollapsed ? "60px" : "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         transition: isDraggingInsights ? "none" : "all 0.25s ease",
         userSelect: "none",
+        WebkitUserSelect: "none",
+        WebkitTouchCallout: "none",
+        touchAction: "none",
       }}
     >
       {/* Toggle Button - Draggable Handle */}
@@ -2120,11 +2141,8 @@ ${paymentLines || "—"}
         type="button"
         onMouseDown={(e) => {
           if (isInsightsSidebarCollapsed && !isDraggingInsights) {
-            // Get the parent container position
             const container = e.currentTarget.parentElement;
             const rect = container.getBoundingClientRect();
-            
-            // Calculate offset from click point to widget center
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             
@@ -2135,6 +2153,22 @@ ${paymentLines || "—"}
             setIsDraggingInsights(true);
             e.preventDefault();
             e.currentTarget.style.cursor = "grabbing";
+          }
+        }}
+        onTouchStart={(e) => {
+          if (isInsightsSidebarCollapsed && !isDraggingInsights && e.touches.length > 0) {
+            const touch = e.touches[0];
+            const container = e.currentTarget.parentElement;
+            const rect = container.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            setDragOffset({
+              x: touch.clientX - centerX,
+              y: touch.clientY - centerY,
+            });
+            setIsDraggingInsights(true);
+            e.preventDefault();
           }
         }}
         onMouseUp={(e) => {
@@ -2152,7 +2186,7 @@ ${paymentLines || "—"}
         style={{
           background: "none",
           border: "none",
-          fontSize: isInsightsSidebarCollapsed ? "1.6em" : "1.2em",
+          fontSize: isInsightsSidebarCollapsed ? "1.8em" : "1.2em",
           cursor: isInsightsSidebarCollapsed ? "grab" : "pointer",
           padding: "0",
           color: isInsightsSidebarCollapsed ? "#fff" : "#2563eb",
@@ -2161,8 +2195,11 @@ ${paymentLines || "—"}
           justifyContent: "center",
           transition: "all 0.2s",
           lineHeight: 1,
+          minWidth: "50px",
+          minHeight: "50px",
+          WebkitTapHighlightColor: "transparent",
         }}
-        title={isInsightsSidebarCollapsed ? "Drag to move • Click to expand" : "Click to close"}
+        title={isInsightsSidebarCollapsed ? "Drag to move • Tap to expand" : "Tap to close"}
       >
         {isInsightsSidebarCollapsed ? "📊" : "✕"}
       </button>
@@ -2172,20 +2209,20 @@ ${paymentLines || "—"}
         <div style={{ marginTop: 8, width: "100%" }}>
           {/* Total Customers */}
           <div style={{ textAlign: "center", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #f0f0f0" }}>
-            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>👥</div>
-            <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#2563eb" }}>{customers.length}</div>
+            <div style={{ fontSize: "0.7em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>👥</div>
+            <div style={{ fontSize: "1.5em", fontWeight: 800, color: "#2563eb" }}>{customers.length}</div>
           </div>
 
           {/* Total Liters */}
           <div style={{ textAlign: "center", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #f0f0f0" }}>
-            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>🥛</div>
-            <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#10b981" }}>{calculateTotalLitres()}L</div>
+            <div style={{ fontSize: "0.7em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>🥛</div>
+            <div style={{ fontSize: "1.5em", fontWeight: 800, color: "#10b981" }}>{calculateTotalLitres()}L</div>
           </div>
 
           {/* Demo Status */}
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>Status</div>
-            <div style={{ fontSize: "0.75em", fontWeight: 700, color: "#16a34a" }}>🟢 Live</div>
+            <div style={{ fontSize: "0.7em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>Status</div>
+            <div style={{ fontSize: "0.8em", fontWeight: 700, color: "#16a34a" }}>🟢 Live</div>
           </div>
         </div>
       )}
