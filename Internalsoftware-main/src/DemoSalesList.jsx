@@ -2067,19 +2067,19 @@ ${paymentLines || "—"}
   {demoId && (
     <div
       style={{
-        position: "sticky",
-        top: 20,
+        position: "fixed",
+        bottom: 24,
         right: 20,
         zIndex: 50,
         background: isInsightsSidebarCollapsed ? "#2563eb" : "#ffffff",
         border: isInsightsSidebarCollapsed ? "none" : "1px solid #e5e7eb",
-        borderRadius: isInsightsSidebarCollapsed ? "50%" : "8px",
-        padding: isInsightsSidebarCollapsed ? "6px" : "12px",
+        borderRadius: isInsightsSidebarCollapsed ? "50%" : "12px",
+        padding: isInsightsSidebarCollapsed ? "8px" : "14px",
         boxShadow: isInsightsSidebarCollapsed 
-          ? "0 4px 12px rgba(37, 99, 235, 0.25)" 
-          : "0 2px 8px rgba(0, 0, 0, 0.08)",
-        width: isInsightsSidebarCollapsed ? "44px" : "auto",
-        height: isInsightsSidebarCollapsed ? "44px" : "auto",
+          ? "0 6px 20px rgba(37, 99, 235, 0.3)" 
+          : "0 4px 16px rgba(0, 0, 0, 0.12)",
+        width: isInsightsSidebarCollapsed ? "50px" : "auto",
+        height: isInsightsSidebarCollapsed ? "50px" : "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -2094,7 +2094,7 @@ ${paymentLines || "—"}
         style={{
           background: "none",
           border: "none",
-          fontSize: isInsightsSidebarCollapsed ? "1.4em" : "1.2em",
+          fontSize: isInsightsSidebarCollapsed ? "1.6em" : "1.2em",
           cursor: "pointer",
           padding: "0",
           color: isInsightsSidebarCollapsed ? "#fff" : "#2563eb",
