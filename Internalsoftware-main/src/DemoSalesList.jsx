@@ -171,15 +171,49 @@ const [selectedVillage, setSelectedVillage] = useState("");
 const [lastAddedCustomer, setLastAddedCustomer] = useState(null);
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [filterByMember, setFilterByMember] = useState("all");
+  const [filterByPackage, setFilterByPackage] = useState("all");
+  const [filterByPayment, setFilterByPayment] = useState("all");
   const [isDashboardCollapsed, setIsDashboardCollapsed] = useState(false);
+  const [isStockTakenCollapsed, setIsStockTakenCollapsed] = useState(false);
+  const [isFileUploadCollapsed, setIsFileUploadCollapsed] = useState(true);
+  const [lastVillageId, setLastVillageId] = useState(null);
+  const [lastVillageName, setLastVillageName] = useState(null);
 
-  // Get current user email from auth
+  // Get current user email from auth and load last village
   useEffect(() => {
     const auth = getAuth();
     const currentUser = auth.currentUser;
-    if (currentUser) {
-      setCurrentUserEmail(currentUser.email || "");
+    
+    if (!currentUser) {
+      setCurrentUserEmail("");
+      setLastVillageId(null);
+      setLastVillageName(null);
+      return;
     }
+
+    setCurrentUserEmail(currentUser.email || "");
+
+    // Load last village from Firebase userPreferences
+    const loadLastVillage = async () => {
+      try {
+        const userPrefSnap = await getDoc(doc(db, "userPreferences", currentUser.uid));
+        console.log("User preferences doc exists:", userPrefSnap.exists()); // Debug
+        console.log("User preferences data:", userPrefSnap.data()); // Debug
+        
+        if (userPrefSnap.exists()) {
+          const pref = userPrefSnap.data();
+          if (pref.lastVillageId && pref.lastVillageName) {
+            console.log("Setting last village:", pref.lastVillageId, pref.lastVillageName); // Debug
+            setLastVillageId(pref.lastVillageId);
+            setLastVillageName(pref.lastVillageName);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading last village:", err);
+      }
+    };
+
+    loadLastVillage();
   }, []);
 
   // Check if current user can edit a customer
@@ -330,11 +364,31 @@ useEffect(() => {
   }, [selectedVillageId]);
 
   // When user selects a village from dropdown, update both demoInfo.village (name) and selectedVillageId (id)
-  const handleVillageSelect = (e) => {
+  const handleVillageSelect = async (e) => {
     const id = e.target.value;
     setSelectedVillageId(id);
     const found = villageOptions.find(v => v.id === id);
-    setDemoInfo(prev => ({ ...prev, village: found ? found.name : "" }));
+    const villageName = found ? found.name : "";
+    setDemoInfo(prev => ({ ...prev, village: villageName }));
+
+    // Save last village to Firebase userPreferences
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    if (currentUser && id) {
+      try {
+        await setDoc(doc(db, "userPreferences", currentUser.uid), {
+          lastVillageId: id,
+          lastVillageName: villageName,
+          lastUpdated: serverTimestamp(),
+        }, { merge: true });
+        
+        // Update local state
+        setLastVillageId(id);
+        setLastVillageName(villageName);
+      } catch (err) {
+        console.error("Error saving last village:", err);
+      }
+    }
   };
 
   const handleCustomerInput = (e) => {
@@ -477,11 +531,174 @@ async function startDemo() {
   toast.success("Demo started!");
 }
 
-// Save demoInfo to localStorage on every change
+// Auto-save demoInfo to Firebase villageDemo when it changes
 useEffect(() => {
-  localStorage.setItem("demoInfo", JSON.stringify(demoInfo));
-}, [demoInfo]);
+  if (!selectedVillageId) return;
 
+  const saveData = async () => {
+    try {
+      await setDoc(doc(db, "villageDemo", selectedVillageId), {
+        demoInfo: demoInfo,
+        lastUpdated: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error("Error saving demoInfo:", err);
+    }
+  };
+
+  const timer = setTimeout(saveData, 500); // Debounce 500ms
+  return () => clearTimeout(timer);
+}, [demoInfo, selectedVillageId]);
+
+// Auto-save paymentsCollected to Firebase
+useEffect(() => {
+  if (!selectedVillageId) return;
+
+  const saveData = async () => {
+    try {
+      await setDoc(doc(db, "villageDemo", selectedVillageId), {
+        paymentsCollected: paymentsCollected,
+        lastUpdated: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error("Error saving payments:", err);
+    }
+  };
+
+  const timer = setTimeout(saveData, 500);
+  return () => clearTimeout(timer);
+}, [paymentsCollected, selectedVillageId]);
+
+// Auto-save stockReturned to Firebase
+useEffect(() => {
+  if (!selectedVillageId) return;
+
+  const saveData = async () => {
+    try {
+      await setDoc(doc(db, "villageDemo", selectedVillageId), {
+        stockReturned: stockReturned,
+        lastUpdated: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error("Error saving stock returned:", err);
+    }
+  };
+
+  const timer = setTimeout(saveData, 500);
+  return () => clearTimeout(timer);
+}, [stockReturned, selectedVillageId]);
+
+// Load villageDemo data when village is selected
+useEffect(() => {
+  if (!selectedVillageId) {
+    // Reset all data when no village selected
+    setDemoInfo(initialDemoInfo);
+    setPaymentsCollected([]);
+    setStockReturned([]);
+    setStockTaken([]);
+    setStockAtDairy([]);
+    return;
+  }
+
+  const loadData = async () => {
+    try {
+      // Load villageDemo data
+      const demoDocSnap = await getDoc(doc(db, "villageDemo", selectedVillageId));
+      if (demoDocSnap.exists()) {
+        const data = demoDocSnap.data();
+        
+        // Load demoInfo if it exists
+        if (data.demoInfo) {
+          setDemoInfo(prev => ({
+            ...prev,
+            ...data.demoInfo,
+            village: prev.village || data.demoInfo.village || ""
+          }));
+        }
+        
+        // Load paymentsCollected
+        if (Array.isArray(data.paymentsCollected)) {
+          setPaymentsCollected(data.paymentsCollected);
+        }
+        
+        // Load stockReturned
+        if (Array.isArray(data.stockReturned)) {
+          setStockReturned(data.stockReturned);
+        }
+      } else {
+        // New village - initialize with fresh data
+        setPaymentsCollected([]);
+        setStockReturned([]);
+      }
+
+      // Load villageStocks data
+      const stockDocSnap = await getDoc(doc(db, "villageStocks", selectedVillageId));
+      if (stockDocSnap.exists()) {
+        const stockData = stockDocSnap.data();
+        
+        // Load stockTaken
+        if (Array.isArray(stockData.stocks)) {
+          setStockTaken(stockData.stocks);
+        } else {
+          setStockTaken([]);
+        }
+        
+        // Load stockAtDairy
+        if (Array.isArray(stockData.dairyStocks)) {
+          setStockAtDairy(stockData.dairyStocks);
+        } else {
+          setStockAtDairy([]);
+        }
+      } else {
+        setStockTaken([]);
+        setStockAtDairy([]);
+      }
+    } catch (err) {
+      console.error("Error loading village demo data:", err);
+    }
+  };
+
+  loadData();
+}, [selectedVillageId]);
+
+// Auto-save stockTaken to Firebase villageStocks (for demo)
+useEffect(() => {
+  if (!selectedVillageId || stockTaken.length === 0) return;
+
+  const saveData = async () => {
+    try {
+      await setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        stocks: stockTaken,
+        villageName: demoInfo.village || (villageOptions.find(v => v.id === selectedVillageId)?.name) || "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error saving stockTaken:', err);
+    }
+  };
+
+  const timer = setTimeout(saveData, 1000); // Debounce 1s
+  return () => clearTimeout(timer);
+}, [stockTaken, selectedVillageId, demoInfo.village, villageOptions]);
+
+// Auto-save stockAtDairy to Firebase villageStocks (dairy inventory)
+useEffect(() => {
+  if (!selectedVillageId || stockAtDairy.length === 0) return;
+
+  const saveData = async () => {
+    try {
+      await setDoc(doc(db, 'villageStocks', selectedVillageId), {
+        dairyStocks: stockAtDairy,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error saving stockAtDairy:', err);
+    }
+  };
+
+  const timer = setTimeout(saveData, 1000);
+  return () => clearTimeout(timer);
+}, [stockAtDairy, selectedVillageId]);
 
   // Helper function to deduct stock from stockTaken (shared by customers and dairy)
   const deductFromStock = (packLabel, qty) => {
@@ -1616,7 +1833,6 @@ ${paymentLines || "—"}
   return (
     <>
       <Navbar />
-      <div style={{ backgroundColor: "#FFD700", padding: "12px", textAlign: "center", fontWeight: "bold", fontSize: "16px", color: "red" }}>🔥 STOCK FEATURE LOADED - v2.1</div>
       <div
         className="form-container"
         style={{
@@ -1693,11 +1909,66 @@ ${paymentLines || "—"}
               onVillageChange={(id) => {
                 setSelectedVillageId(id);
                 const found = villageOptions.find(v => v.id === id);
-                setDemoInfo(prev => ({ ...prev, village: found ? found.name : "" }));
+                const villageName = found ? found.name : "";
+                setDemoInfo(prev => ({ ...prev, village: villageName }));
+                
+                // Save last village to Firebase
+                const auth = getAuth();
+                const currentUser = auth.currentUser;
+                if (currentUser && id) {
+                  setDoc(doc(db, "userPreferences", currentUser.uid), {
+                    lastVillageId: id,
+                    lastVillageName: villageName,
+                    lastUpdated: serverTimestamp(),
+                  }, { merge: true }).catch(err => console.error("Error saving last village:", err));
+                  
+                  setLastVillageId(id);
+                  setLastVillageName(villageName);
+                }
               }}
               label="Village*"
               showLabel={true}
             />
+
+            {/* LAST VILLAGE ADDED */}
+            <div style={{
+              gridColumn: "1 / -1",
+              marginTop: 8,
+              padding: "6px 0",
+              textAlign: "center",
+              fontSize: "0.8em"
+            }}>
+              {lastVillageId && lastVillageName ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedVillageId(lastVillageId);
+                    setDemoInfo(prev => ({ ...prev, village: lastVillageName }));
+                  }}
+                  style={{
+                    background: "transparent",
+                    color: "#9ca3af",
+                    border: "1px solid #e5e7eb",
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontSize: "0.8em",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseOver={(e) => {
+                    e.target.style.color = "#6366f1";
+                    e.target.style.borderColor = "#6366f1";
+                  }}
+                  onMouseOut={(e) => {
+                    e.target.style.color = "#9ca3af";
+                    e.target.style.borderColor = "#e5e7eb";
+                  }}
+                >
+                  ⏰ Last: {lastVillageName}
+                </button>
+              ) : null}
+            </div>
 
             <div>              <div>
                 <label>Mantri*</label>
@@ -1798,202 +2069,233 @@ ${paymentLines || "—"}
           }}
         >
           {/* Header with gradient */}
-          <div style={{ padding: "24px 24px 16px 24px", background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)", borderRadius: "11px 11px 0 0", color: "#fff" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.5em", letterSpacing: "0.05em" }}>
-                📦 STOCK TAKEN TO VILLAGE
-              </h3>
+          <div style={{ padding: "14px 16px 10px 16px", background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)", borderRadius: "11px 11px 0 0", color: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.15em", letterSpacing: "0.05em" }}>
+                  📦 STOCK TAKEN
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsStockTakenCollapsed(!isStockTakenCollapsed)}
+                  style={{
+                    background: "rgba(255,255,255,0.2)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    padding: "4px 10px",
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontSize: "0.8em",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseOver={(e) => {
+                    e.target.style.background = "rgba(255,255,255,0.3)";
+                  }}
+                  onMouseOut={(e) => {
+                    e.target.style.background = "rgba(255,255,255,0.2)";
+                  }}
+                >
+                  {isStockTakenCollapsed ? "▶" : "▼"}
+                </button>
+              </div>
               {(() => {
                 const totalQty = stockTaken.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
                 return (
-                  <div style={{ background: "rgba(255,255,255,0.25)", padding: "10px 18px", borderRadius: 8, fontSize: "1em", fontWeight: 700 }}>
-                    <span style={{ fontSize: "1.4em" }}>{totalQty}</span>
-                    <div style={{ fontSize: "0.8em", opacity: 0.9 }}>Total Units</div>
+                  <div style={{ background: "rgba(255,255,255,0.25)", padding: "6px 12px", borderRadius: 8, fontSize: "0.9em", fontWeight: 700 }}>
+                    <span style={{ fontSize: "1.1em" }}>{totalQty}</span>
+                    <div style={{ fontSize: "0.75em", opacity: 0.9 }}>Units</div>
                   </div>
                 );
               })()}
             </div>
-            <p style={{ margin: 0, fontSize: "0.95em", opacity: 0.95 }}>Add packaging items and quantities that will be taken to the village for demonstration and sales</p>
+            <p style={{ margin: 0, fontSize: "0.85em", opacity: 0.9 }}>Add packaging items for village</p>
           </div>
 
-          {/* Input Form Section */}
-          <div style={{ padding: "18px 24px", background: "#fff", borderBottom: "2px solid #e0f2fe" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, alignItems: "flex-end" }}>
-              <div>
-                <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 6 }}>Select Packaging Type</label>
-                <select 
-                  value={stockInput.packaging} 
-                  onChange={(e) => setStockInput({ ...stockInput, packaging: e.target.value })} 
-                  style={{ 
-                    width: "100%", 
-                    padding: "10px 12px", 
-                    borderRadius: 6, 
-                    border: "2px solid #bfdbfe", 
-                    background: "#fff", 
-                    color: "#000",
-                    fontSize: "0.95em",
-                    fontWeight: 600
-                  }}
-                >
-                  <option value="">-- Select Packaging --</option>
-                  {packagingNames.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 6 }}>Quantity</label>
-                <input 
-                  type="number" 
-                  name="quantity" 
-                  value={stockInput.quantity} 
-                  onChange={handleStockInput} 
-                  min="1" 
-                  placeholder="Enter qty" 
-                  style={{ 
-                    width: "100%", 
-                    padding: "10px 12px", 
-                    borderRadius: 6, 
-                    border: "2px solid #bfdbfe", 
-                    background: "#fff",
-                    fontSize: "0.95em",
-                    fontWeight: 600
-                  }} 
-                />
-              </div>
-
-              <button 
-                type="button" 
-                onClick={addStock} 
-                style={{ 
-                  padding: "10px 28px", 
-                  background: "#10b981", 
-                  color: "#fff", 
-                  border: "none", 
-                  borderRadius: 8, 
-                  fontWeight: 700, 
-                  fontSize: "0.95em", 
-                  cursor: "pointer", 
-                  transition: "all 0.3s",
-                  boxShadow: "0 2px 8px #10b98144",
-                  width: "100%"
-                }} 
-                onMouseOver={(e) => {
-                  e.target.style.background = "#059669";
-                  e.target.style.transform = "translateY(-2px)";
-                  e.target.style.boxShadow = "0 4px 12px #10b98155";
-                }} 
-                onMouseOut={(e) => {
-                  e.target.style.background = "#10b981";
-                  e.target.style.transform = "translateY(0)";
-                  e.target.style.boxShadow = "0 2px 8px #10b98144";
-                }}
-              >
-                ✓ ADD TO STOCK
-              </button>
-            </div>
-          </div>
-
-          {/* Stock Items Display */}
-          <div style={{ padding: "20px 24px" }}>
-            {stockTaken.length === 0 ? (
-              <div style={{ 
-                textAlign: "center", 
-                color: '#6b7280', 
-                padding: "40px 20px", 
-                fontSize: "1.05em",
-                background: "#f8fafc",
-                borderRadius: 8,
-                border: "2px dashed #cbd5e1"
-              }}>
-                <div style={{ fontSize: "3em", marginBottom: 8 }}>📭</div>
-                <div>No stock added yet. Add packaging and quantity above to get started.</div>
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14, marginBottom: 16 }}>
-                  {stockTaken.map((t, idx) => (
-                    <div 
-                      key={idx} 
+          {!isStockTakenCollapsed && (
+            <>
+              {/* Input Form Section */}
+              <div style={{ padding: "10px 14px", background: "#fff", borderBottom: "1px solid #e0f2fe" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, alignItems: "flex-end" }}>
+                  <div>
+                    <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 4, fontSize: "0.9em" }}>Select Packaging Type</label>
+                    <select 
+                      value={stockInput.packaging} 
+                      onChange={(e) => setStockInput({ ...stockInput, packaging: e.target.value })} 
                       style={{ 
-                        background: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)",
-                        padding: "16px", 
-                        borderRadius: 10, 
-                        border: "2px solid #06b6d4", 
-                        display: "flex", 
-                        justifyContent: "space-between", 
-                        alignItems: "center",
-                        boxShadow: "0 2px 8px #06b6d422"
+                        width: "100%", 
+                        padding: "8px 10px", 
+                        borderRadius: 6, 
+                        border: "2px solid #bfdbfe", 
+                        background: "#fff", 
+                        color: "#000",
+                        fontSize: "0.9em",
+                        fontWeight: 600
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: 800, color: "#0369a1", fontSize: "1.05em" }}>{t.packaging}</div>
-                        <div style={{ color: "#0891b2", fontSize: "0.95em", marginTop: 4, fontWeight: 700 }}>Qty: {t.quantity}</div>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => removeStockTaken(idx)} 
-                        style={{ 
-                          padding: '8px 12px', 
-                          borderRadius: 6, 
-                          background: '#ef4444', 
-                          color: '#fff', 
-                          border: 'none', 
-                          cursor: 'pointer', 
-                          fontWeight: 700, 
-                          fontSize: "0.9em", 
-                          transition: "all 0.2s",
-                          boxShadow: "0 2px 4px #ef444444"
-                        }} 
-                        onMouseOver={(e) => {
-                          e.target.style.background = '#dc2626';
-                          e.target.style.transform = "scale(1.05)";
-                        }} 
-                        onMouseOut={(e) => {
-                          e.target.style.background = '#ef4444';
-                          e.target.style.transform = "scale(1)";
-                        }}
-                      >
-                        ✕ Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                      <option value="">-- Select Packaging --</option>
+                      {packagingNames.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Save to Village Button */}
-                <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
+                  <div>
+                    <label style={{ fontWeight: 700, color: "#0369a1", display: "block", marginBottom: 4, fontSize: "0.9em" }}>Quantity</label>
+                    <input 
+                      type="number" 
+                      name="quantity" 
+                      value={stockInput.quantity} 
+                      onChange={handleStockInput} 
+                      min="1" 
+                      placeholder="Enter qty" 
+                      style={{ 
+                        width: "100%", 
+                        padding: "8px 10px", 
+                        borderRadius: 6, 
+                        border: "2px solid #bfdbfe", 
+                        background: "#fff",
+                        fontSize: "0.9em",
+                        fontWeight: 600
+                      }} 
+                    />
+                  </div>
+
                   <button 
                     type="button" 
-                    onClick={saveStockToVillage} 
+                    onClick={addStock} 
                     style={{ 
-                      flex: 1, 
-                      padding: "14px 20px", 
-                      background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", 
+                      padding: "8px 18px", 
+                      background: "#10b981", 
                       color: "#fff", 
                       border: "none", 
                       borderRadius: 8, 
                       fontWeight: 700, 
-                      fontSize: "1.05em",
+                      fontSize: "0.9em", 
                       cursor: "pointer", 
                       transition: "all 0.3s",
-                      boxShadow: "0 4px 12px #10b98144"
+                      boxShadow: "0 2px 8px #10b98144",
+                      width: "100%"
                     }} 
                     onMouseOver={(e) => {
+                      e.target.style.background = "#059669";
                       e.target.style.transform = "translateY(-2px)";
-                      e.target.style.boxShadow = "0 6px 16px #10b98155";
+                      e.target.style.boxShadow = "0 4px 12px #10b98155";
                     }} 
                     onMouseOut={(e) => {
+                      e.target.style.background = "#10b981";
                       e.target.style.transform = "translateY(0)";
-                      e.target.style.boxShadow = "0 4px 12px #10b98144";
+                      e.target.style.boxShadow = "0 2px 8px #10b98144";
                     }}
                   >
-                    💾 SAVE STOCK FOR VILLAGE
+                    ✓ ADD TO STOCK
                   </button>
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* Stock Items Display */}
+              <div style={{ padding: "10px 14px" }}>
+                {stockTaken.length === 0 ? (
+                  <div style={{ 
+                    textAlign: "center", 
+                    color: '#6b7280', 
+                    padding: "16px 10px", 
+                    fontSize: "0.9em",
+                    background: "#f8fafc",
+                    borderRadius: 6,
+                    border: "1px dashed #cbd5e1"
+                  }}>
+                    <div style={{ fontSize: "2em", marginBottom: 4 }}>📭</div>
+                    <div>No stock added yet. Add packaging and quantity above to get started.</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: "flex", overflowX: "auto", gap: 10, marginBottom: 12, paddingBottom: 6 }}>
+                      {stockTaken.map((t, idx) => (
+                        <div 
+                          key={idx} 
+                          style={{ 
+                            background: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)",
+                            padding: "12px", 
+                            borderRadius: 10, 
+                            border: "2px solid #06b6d4", 
+                            display: "flex", 
+                            justifyContent: "space-between", 
+                            alignItems: "center",
+                            boxShadow: "0 2px 8px #06b6d422",
+                            minWidth: 210,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 800, color: "#0369a1", fontSize: "0.95em" }}>{t.packaging}</div>
+                            <div style={{ color: "#0891b2", fontSize: "0.85em", marginTop: 2, fontWeight: 700 }}>Qty: {t.quantity}</div>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => removeStockTaken(idx)} 
+                            style={{ 
+                              padding: '6px 10px', 
+                              borderRadius: 6, 
+                              background: '#ef4444', 
+                              color: '#fff', 
+                              border: 'none', 
+                              cursor: 'pointer', 
+                              fontWeight: 700, 
+                              fontSize: "0.85em", 
+                              transition: "all 0.2s",
+                              boxShadow: "0 2px 4px #ef444444"
+                            }} 
+                            onMouseOver={(e) => {
+                              e.target.style.background = '#dc2626';
+                              e.target.style.transform = "scale(1.05)";
+                            }} 
+                            onMouseOut={(e) => {
+                              e.target.style.background = '#ef4444';
+                              e.target.style.transform = "scale(1)";
+                            }}
+                          >
+                            ✕ Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Save to Village Button */}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button 
+                        type="button" 
+                        onClick={saveStockToVillage} 
+                        style={{ 
+                          flex: 1, 
+                          padding: "8px 12px", 
+                          background: "linear-gradient(135deg, #10b981 0%, #059669 100%)", 
+                          color: "#fff", 
+                          border: "none", 
+                          borderRadius: 8, 
+                          fontWeight: 700, 
+                          fontSize: "0.9em",
+                          cursor: "pointer", 
+                          transition: "all 0.3s",
+                          boxShadow: "0 4px 12px #10b98144"
+                        }} 
+                        onMouseOver={(e) => {
+                          e.target.style.transform = "translateY(-2px)";
+                          e.target.style.boxShadow = "0 6px 16px #10b98155";
+                        }} 
+                        onMouseOut={(e) => {
+                          e.target.style.transform = "translateY(0)";
+                          e.target.style.boxShadow = "0 4px 12px #10b98144";
+                        }}
+                      >
+                        💾 SAVE STOCK FOR VILLAGE
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
     <div className="form-section">
@@ -2027,36 +2329,62 @@ ${paymentLines || "—"}
               padding: "24px 18px",
             }}
           >
-            <input
-  type="file"
-  accept=".xlsx, .xls, .csv"
-  onChange={handleExcelUpload}
-/>
-{excelData.length > 0 && (
-  <button
-    type="button"
-    onClick={handleCancelExcelUpload}
-    style={{
-      marginLeft: "10px",
-      padding: "5px 10px",
-      backgroundColor: "#ff4d4f",
-      color: "white",
-      border: "none",
-      borderRadius: "4px",
-      cursor: "pointer",
-    }}
-  >
-    Cancel Upload
-  </button>
-)}
-            <div style={{ marginBottom: 20, textAlign: "center" }}>
-              <input type="file" accept=".xlsx, .xls,.csv" onChange={handleExcelUpload} />
-              <span style={{ marginLeft: 10, color: "#6b7280", fontSize: "0.9em" }}>
-                (Upload will add to existing customers)
-              </span>
+            {/* File Upload Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 12, borderBottom: "2px solid #b6c7e6" }}>
+              <h4 style={{ margin: 0, fontWeight: 700, color: "#0369a1", fontSize: "1.05em" }}>📁 Upload Customers</h4>
+              <button
+                type="button"
+                onClick={() => setIsFileUploadCollapsed(!isFileUploadCollapsed)}
+                style={{
+                  background: "#2563eb",
+                  color: "#fff",
+                  border: "none",
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontSize: "0.85em",
+                  transition: "all 0.2s"
+                }}
+                onMouseOver={(e) => e.target.style.background = "#1d4ed8"}
+                onMouseOut={(e) => e.target.style.background = "#2563eb"}
+              >
+                {isFileUploadCollapsed ? "▶ Expand" : "▼ Collapse"}
+              </button>
             </div>
 
+            {/* File Upload Content */}
+            {!isFileUploadCollapsed && (
+              <div style={{ marginBottom: 20, padding: "12px 0" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
+                  <input type="file" accept=".xlsx, .xls,.csv" onChange={handleExcelUpload} />
+                  {excelData.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleCancelExcelUpload}
+                      style={{
+                        padding: "5px 10px",
+                        backgroundColor: "#ff4d4f",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontSize: "0.9em"
+                      }}
+                    >
+                      Cancel Upload
+                    </button>
+                  )}
+                </div>
+                <span style={{ color: "#6b7280", fontSize: "0.85em" }}>📝 Upload will add to existing customers</span>
+              </div>
+            )}
+
             {/* Search & Select customer */}
+            <div style={{ marginTop: 16, marginBottom: 12 }}>
+              <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>🔍 Search Customer:</label>
+            </div>
             <div style={{ position: "relative", width: "100%", maxWidth: "500px" }}>
               <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
                 <span style={{ position: "absolute", left: 12, color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
@@ -2426,12 +2754,78 @@ ${paymentLines || "—"}
             {/* Customer List - Responsive */}
             {customers.length > 0 && (
               <div style={{ marginTop: 18 }}>
-                {/* Member Filter */}
+                {/* Search Bar */}
+                <div style={{ marginBottom: 14, display: "flex", gap: 8, alignItems: "flex-end" }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>Search Customer:</label>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by Code, Name, or Mobile..."
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: "0.95em",
+                        background: "#fff"
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!searchQuery.trim()) {
+                        setSearchQuery("");
+                      }
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      background: "#2563eb",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 6,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontSize: "0.9em",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseOver={(e) => {
+                      e.target.style.background = "#1d4ed8";
+                    }}
+                    onMouseOut={(e) => {
+                      e.target.style.background = "#2563eb";
+                    }}
+                  >
+                    🔍 Search
+                  </button>
+                </div>
+
+                {/* Combined Filter Dropdown */}
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>Filter by Member:</label>
+                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>Quick Filter:</label>
                   <select
-                    value={filterByMember}
-                    onChange={(e) => setFilterByMember(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith("member:")) {
+                        setFilterByMember(val.substring(7));
+                        setFilterByPackage("all");
+                        setFilterByPayment("all");
+                      } else if (val.startsWith("package:")) {
+                        setFilterByPackage(val.substring(8));
+                        setFilterByMember("all");
+                        setFilterByPayment("all");
+                      } else if (val.startsWith("payment:")) {
+                        setFilterByPayment(val.substring(8));
+                        setFilterByMember("all");
+                        setFilterByPackage("all");
+                      } else {
+                        setFilterByMember("all");
+                        setFilterByPackage("all");
+                        setFilterByPayment("all");
+                      }
+                    }}
                     style={{
                       width: "100%",
                       padding: "8px 12px",
@@ -2442,94 +2836,144 @@ ${paymentLines || "—"}
                       cursor: "pointer"
                     }}
                   >
-                    <option value="all">All Members</option>
-                    {uniqueMembers.map((member) => (
-                      <option key={member.email} value={member.email || member.username || member.displayName}>
-                        {member.email === currentUserEmail ? `👤 ${member.username || member.displayName || member.email} (You)` : `👤 ${member.username || member.displayName || member.email}`}
-                      </option>
-                    ))}
+                    <option value="">— All Customers —</option>
+                    
+                    <optgroup label="👤 Members">
+                      {uniqueMembers.map((member) => (
+                        <option key={member.email} value={`member:${member.email || member.username || member.displayName}`}>
+                          {member.email === currentUserEmail ? `${member.username || member.displayName || member.email} (You)` : `${member.username || member.displayName || member.email}`}
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="📦 Packages">
+                      {[...new Set(customers.map(c => c.orderPackaging).filter(Boolean))].sort().map((pkg) => (
+                        <option key={pkg} value={`package:${pkg}`}>{pkg}</option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="💳 Payment Methods">
+                      <option value="payment:CASH">💵 CASH</option>
+                      <option value="payment:PAVTI">📋 PAVTI</option>
+                    </optgroup>
                   </select>
                 </div>
 
-                {/* Card View */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-                  {filteredCustomersByMember.map((c, idx) => {
-                    const qty = parseInt(c.orderQty) || 0;
-                    let rate = 0;
-                    if (c.appliedPrice) {
-                      rate = parseInt(c.appliedPrice) || 0;
-                    } else {
-                      rate = getPriceByName(c.orderPackaging) || 0;
-                    }
-                    const total = rate * qty;
+                {/* Calculate filtered list */}
+                {(() => {
+                  let displayList = filteredCustomersByMember;
 
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          background: "#fff",
-                          border: "1px solid #e5e7eb",
-                          borderRadius: 10,
-                          padding: 14,
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                        }}
-                      >
-                        {/* Header with Photo and Name */}
-                        <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
-                          <div>
-                            {c.photo ? (
-                              <img src={c.photo} alt="customer" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: "1px solid #d1d5db" }} />
-                            ) : (
-                              <div style={{ width: 60, height: 60, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "1.5em" }}>📷</div>
-                            )}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, fontSize: "1.05em", color: "#1f2937" }}>{c.name}</div>
-                            <div style={{ fontSize: "0.85em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile}</div>
-                            {c.code && <div style={{ fontSize: "0.85em", color: "#6b7280" }}>📋 Code: {c.code}</div>}
-                          </div>
-                        </div>
+                  // Package filter
+                  if (filterByPackage !== "all") {
+                    displayList = displayList.filter(c => c.orderPackaging === filterByPackage);
+                  }
 
-                        {/* Details Grid */}
-                        <div style={{ background: "#f9fafb", borderRadius: 6, padding: 10, marginBottom: 12 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.9em" }}>
-                            <div>
-                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📦 Packaging</div>
-                              <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.orderPackaging}</div>
-                            </div>
-                            <div>
-                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📊 Qty</div>
-                              <div style={{ fontWeight: 600, color: "#2563eb", marginTop: 2 }}>{qty}</div>
-                            </div>
-                            <div>
-                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💰 Total</div>
-                              <div style={{ fontWeight: 700, color: "#16a34a", marginTop: 2, fontSize: "1.1em" }}>₹{total}</div>
-                            </div>
-                            <div>
-                              <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💳 Payment</div>
-                              <div style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1', marginTop: 2 }}>{c.paymentMethod || '—'}</div>
-                            </div>
-                          </div>
-                        </div>
+                  // Payment filter
+                  if (filterByPayment !== "all") {
+                    displayList = displayList.filter(c => c.paymentMethod === filterByPayment);
+                  }
 
-                        {/* Additional Info */}
-                        {c.remarks && (
-                          <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
-                            <div style={{ color: "#6b7280" }}>📝 Remarks:</div>
-                            <div style={{ color: "#374151", marginTop: 2 }}>{c.remarks}</div>
-                          </div>
-                        )}
+                  // Search filter: code, name, mobile
+                  if (searchQuery.trim()) {
+                    const query = searchQuery.toLowerCase();
+                    displayList = displayList.filter(c =>
+                      (c.code && c.code.toLowerCase().includes(query)) ||
+                      (c.name && c.name.toLowerCase().includes(query)) ||
+                      (c.mobile && c.mobile.toLowerCase().includes(query))
+                    );
+                  } else {
+                    // Show only 5 recent entries if no search
+                    displayList = displayList.slice(-5).reverse();
+                  }
 
-                        {/* Entry By */}
-                        <div style={{ fontSize: "0.8em", color: "#6b7280", marginBottom: 10 }}>
-                          👤 By: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy || demoInfo.entryBy || ''}</span>
-                        </div>
+                  return (
+                    <>
+                      {searchQuery && <div style={{ marginBottom: 12, fontSize: "0.9em", color: "#6b7280" }}>Found {displayList.length} customer(s)</div>}
+                      {/* Card View - Horizontal Scroll */}
+                      <div style={{ display: "flex", overflowX: "auto", gap: 12, paddingBottom: 8 }}>
+                        {displayList.map((c, idx) => {
+                          const qty = parseInt(c.orderQty) || 0;
+                          let rate = 0;
+                          if (c.appliedPrice) {
+                            rate = parseInt(c.appliedPrice) || 0;
+                          } else {
+                            rate = getPriceByName(c.orderPackaging) || 0;
+                          }
+                          const total = rate * qty;
 
-                        {/* Action Buttons */}
-                        <div style={{ display: "flex", gap: 8 }}>
-                          {canEditCustomer(c) ? (
-                            <>
-                              <button
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                background: "#fff",
+                                border: "1px solid #e5e7eb",
+                                borderRadius: 10,
+                                padding: 14,
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                                minWidth: 280,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {/* Header with Photo and Name */}
+                              <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
+                                <div>
+                                  {c.photo ? (
+                                    <img src={c.photo} alt="customer" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: "1px solid #d1d5db" }} />
+                                  ) : (
+                                    <div style={{ width: 60, height: 60, background: "#f3f4f6", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "1.5em" }}>📷</div>
+                                  )}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 700, fontSize: "1.05em", color: "#1f2937" }}>{c.name}</div>
+                                  <div style={{ fontSize: "0.85em", color: "#6b7280", marginTop: 2 }}>📱 {c.mobile}</div>
+                                  {c.code && <div style={{ fontSize: "0.85em", color: "#6b7280" }}>📋 Code: {c.code}</div>}
+                                </div>
+                              </div>
+
+                              {/* Details Grid */}
+                              <div style={{ background: "#f9fafb", borderRadius: 6, padding: 10, marginBottom: 12 }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.9em" }}>
+                                  <div>
+                                    <div style={{ color: "#6b7280", fontSize: "0.8em" }}>� Code</div>
+                                    <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.code || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ color: "#6b7280", fontSize: "0.8em" }}>�📦 Packaging</div>
+                                    <div style={{ fontWeight: 600, color: "#1f2937", marginTop: 2 }}>{c.orderPackaging}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ color: "#6b7280", fontSize: "0.8em" }}>📊 Qty</div>
+                                    <div style={{ fontWeight: 600, color: "#2563eb", marginTop: 2 }}>{qty}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💰 Total</div>
+                                    <div style={{ fontWeight: 700, color: "#16a34a", marginTop: 2, fontSize: "1.1em" }}>₹{total}</div>
+                                  </div>
+                                  <div>
+                                    <div style={{ color: "#6b7280", fontSize: "0.8em" }}>💳 Payment</div>
+                                    <div style={{ fontWeight: 600, color: c.paymentMethod === 'CASH' ? '#dc2626' : '#0369a1', marginTop: 2 }}>{c.paymentMethod || '—'}</div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Additional Info */}
+                              {c.remarks && (
+                                <div style={{ marginBottom: 10, fontSize: "0.85em" }}>
+                                  <div style={{ color: "#6b7280" }}>📝 Remarks:</div>
+                                  <div style={{ color: "#374151", marginTop: 2 }}>{c.remarks}</div>
+                                </div>
+                              )}
+
+                              {/* Entry By */}
+                              <div style={{ fontSize: "0.8em", color: "#6b7280", marginBottom: 10 }}>
+                                👤 By: <span style={{ color: "#2563eb", fontWeight: 600 }}>{c.addedByUsername || c.addedByDisplayName || c.addedBy || demoInfo.entryBy || ''}</span>
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div style={{ display: "flex", gap: 8 }}>
+                                {canEditCustomer(c) ? (
+                                  <>
+                                    <button
                                 type="button"
                                 style={{
                                   flex: 1,
@@ -2570,8 +3014,11 @@ ${paymentLines || "—"}
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Grand Total - Always Visible on Mobile */}
                 <div style={{ marginTop: 14, padding: 14, background: "linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%)", border: "2px solid #0284c7", borderRadius: 8, textAlign: "center" }}>
@@ -2654,66 +3101,80 @@ ${paymentLines || "—"}
             </div>
 
             {stockAtDairy.length > 0 && (
-              <div style={{ marginTop: 18, overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    textAlign: "center",
-                    background: "#fff",
-                    borderRadius: 8,
-                    boxShadow: "0 1px 6px #2563eb11",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#f7fafd", fontWeight: 700, color: "#174ea6" }}>
-                      <th>Packaging</th>
-                      <th>Quantity</th>
-                      <th>Remove</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockAtDairy.map((s, idx) => (
-                      <tr key={idx} style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}>
-                        <td>{s.packaging}</td>
-                        <td>
+              <div style={{ marginTop: 18 }}>
+                <div style={{ display: "flex", overflowX: "auto", gap: 14, marginBottom: 16, paddingBottom: 8 }}>
+                  {stockAtDairy.map((s, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+                        padding: "16px",
+                        borderRadius: 10,
+                        border: "2px solid #f59e0b",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        boxShadow: "0 2px 8px #f59e0b22",
+                        minWidth: 240,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800, color: "#d97706", fontSize: "1.05em" }}>{s.packaging}</div>
+                        <div style={{ color: "#b45309", fontSize: "0.95em", marginTop: 4, fontWeight: 700 }}>
+                          Qty: 
                           <input
                             type="number"
                             value={parseInt(s.quantity) || 0}
                             onChange={(e) => handleQuantityChangeAtDairy(e, idx)}
                             min="0"
-                            style={{ width: 80 }}
-                          />
-                        </td>
-                        <td>
-                          <button
-                            type="button"
                             style={{ 
-                              padding: "4px 12px", 
-                              borderRadius: 6,
-                              background: "#ef4444",
-                              color: "#fff",
-                              border: "none",
-                              fontWeight: 600,
-                              cursor: "pointer",
+                              width: 60, 
+                              marginLeft: 6,
+                              padding: "4px 6px",
+                              borderRadius: 4,
+                              border: "1px solid #f59e0b",
                               fontSize: "0.9em"
                             }}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              removeStockAtDairy(idx);
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeStockAtDairy(idx);
+                        }}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: 6,
+                          background: "#ef4444",
+                          color: "#fff",
+                          border: "none",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontSize: "0.9em",
+                          transition: "all 0.2s",
+                          boxShadow: "0 2px 4px #ef444444"
+                        }}
+                        onMouseOver={(e) => {
+                          e.target.style.background = "#dc2626";
+                          e.target.style.transform = "scale(1.05)";
+                        }}
+                        onMouseOut={(e) => {
+                          e.target.style.background = "#ef4444";
+                          e.target.style.transform = "scale(1)";
+                        }}
+                      >
+                        ✕ Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
 
-                <p>
-                  <strong>
+                <div style={{ padding: "12px 14px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #0284c7", textAlign: "center" }}>
+                  <strong style={{ color: "#0369a1" }}>
                     Grand Total Stock Value: ₹
                     {stockAtDairy.reduce((acc, s) => {
                       if (!s.packaging) return acc;
@@ -2722,7 +3183,7 @@ ${paymentLines || "—"}
                       return acc + price * qty;
                     }, 0)}
                   </strong>
-                </p>
+                </div>
               </div>
             )}
           </div>
@@ -3226,165 +3687,6 @@ ${paymentLines || "—"}
           </div>
 
           {/* Summary card */}
-          <div
-            style={{
-              margin: "32px auto 0 auto",
-              maxWidth: 700,
-              background: "#fff",
-              border: "1.5px solid #b6c7e6",
-              borderRadius: 10,
-              padding: "18px 22px",
-              fontFamily: "inherit",
-              color: "#174ea6",
-              fontSize: "1.08em",
-              position: "relative",
-              boxShadow: "0 2px 12px #2563eb11",
-            }}
-          >
-            <b>All Entered Data:</b>
-            <div style={{ marginTop: 10 }}>
-              <b>Dairy Info</b>
-              <br />
-              Date: {demoInfo.date || "-"}
-              <br />
-              Village: {demoInfo.village || "-"}
-              <br />
-              Taluka: {demoInfo.taluka || "-"}
-              <br />
-              Mantri: {demoInfo.mantri || "-"}
-              <br />
-              Total Milk: {demoInfo.totalMilk || "-"}
-              <br />
-              Active Sabhasad: {demoInfo.activeSabhasad || "-"}
-              <br />
-              Team Members: {demoInfo.teamMembers || "-"}
-              <br />
-              Entry By: {demoInfo.entryBy || "-"}
-              <br />
-              Demo Remarks: {demoInfo.demoRemarks || "-"}
-              <br />
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <b>Customers</b>
-              {customers.length === 0 ? (
-                <div style={{ color: "#b91c1c" }}>No customers added.</div>
-              ) : (
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    marginTop: 6,
-                    fontSize: "0.98em",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#e3eefd" }}>
-                      <th>Name</th>
-                      <th>Code</th>
-                      <th>Mobile</th>
-                      <th>Packaging</th>
-                      <th>Qty</th>
-                      <th>Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers.map((c, idx) => (
-                      <tr
-                        key={idx}
-                        style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
-                      >
-                        <td>{c.name}</td>
-                        <td>{c.code}</td>
-                        <td>{c.mobile}</td>
-                        <td>{c.orderPackaging}</td>
-                        <td>{c.orderQty}</td>
-                        <td>{c.remarks}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <b>Stock at Dairy</b>
-              {stockAtDairy.length === 0 ? (
-                <div style={{ color: "#b91c1c" }}>No stock added.</div>
-              ) : (
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    marginTop: 6,
-                    fontSize: "0.98em",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#e3eefd" }}>
-                      <th>Packaging</th>
-                      <th>Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockAtDairy.map((s, idx) => (
-                      <tr
-                        key={idx}
-                        style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
-                      >
-                        <td>{s.packaging}</td>
-                        <td>{s.quantity}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <b>Payment Collected</b>
-              {paymentsCollected.length === 0 ? (
-                <div style={{ color: "#b91c1c" }}>No payments added.</div>
-              ) : (
-                <>
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      marginTop: 6,
-                      fontSize: "0.98em",
-                    }}
-                  >
-                    <thead>
-                      <tr style={{ background: "#e3eefd" }}>
-                        <th>Amount</th>
-                        <th>Mode</th>
-                        <th>Given By</th>
-                        <th>Taken By</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paymentsCollected.map((p, idx) => (
-                        <tr
-                          key={idx}
-                          style={{ background: idx % 2 === 0 ? "#f7fafd" : "#fff" }}
-                        >
-                          <td>₹{parseFloat(p.amount).toFixed(2)}</td>
-                          <td>{p.mode}</td>
-                          <td>{p.givenBy}</td>
-                          <td>{p.takenBy}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div style={{ marginTop: 8, fontWeight: "bold", color: "#2563eb" }}>
-                    Total Payment: ₹{paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0).toFixed(2)}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
         {/* WhatsApp Summary */}
 {waSummary && (
   <div
