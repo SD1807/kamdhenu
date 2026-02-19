@@ -2067,8 +2067,8 @@ ${paymentLines || "—"}
   {demoId && (
     <div
       style={{
-        position: "fixed",
-        top: 120,
+        position: "sticky",
+        top: 20,
         right: 20,
         zIndex: 50,
         background: isInsightsSidebarCollapsed ? "#2563eb" : "#ffffff",
