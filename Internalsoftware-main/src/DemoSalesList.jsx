@@ -519,6 +519,9 @@ useEffect(() => {
   const [waCopied, setWACopied] = useState(false);
   const [demoId, setDemoId] = useState(null);
   const [isInsightsSidebarCollapsed, setIsInsightsSidebarCollapsed] = useState(true);
+  const [insightsPosition, setInsightsPosition] = useState({ x: 20, y: 100 });
+  const [isDraggingInsights, setIsDraggingInsights] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [soldSummary, setSoldSummary] = useState({});
   const [remainingStockList, setRemainingStockList] = useState([]);
 
@@ -2063,13 +2066,13 @@ ${paymentLines || "—"}
   Start Demo
   </button>
 
-  {/* ========== DEMO INSIGHTS SIDEBAR ========== */}
+  {/* ========== DEMO INSIGHTS SIDEBAR - DRAGGABLE ========== */}
   {demoId && (
     <div
       style={{
         position: "fixed",
-        bottom: 24,
-        right: 20,
+        left: insightsPosition.x,
+        top: insightsPosition.y,
         zIndex: 50,
         background: isInsightsSidebarCollapsed ? "#2563eb" : "#ffffff",
         border: isInsightsSidebarCollapsed ? "none" : "1px solid #e5e7eb",
@@ -2084,18 +2087,35 @@ ${paymentLines || "—"}
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        transition: "all 0.25s ease",
+        transition: isDraggingInsights ? "none" : "all 0.25s ease",
+        userSelect: "none",
       }}
     >
-      {/* Toggle Button */}
+      {/* Toggle Button - Draggable Handle */}
       <button
         type="button"
-        onClick={() => setIsInsightsSidebarCollapsed(!isInsightsSidebarCollapsed)}
+        onMouseDown={(e) => {
+          if (isInsightsSidebarCollapsed) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setDragOffset({
+              x: e.clientX - rect.left,
+              y: e.clientY - rect.top,
+            });
+            setIsDraggingInsights(true);
+          } else {
+            setIsInsightsSidebarCollapsed(true);
+          }
+        }}
+        onClick={() => {
+          if (!isDraggingInsights && isInsightsSidebarCollapsed) {
+            setIsInsightsSidebarCollapsed(false);
+          }
+        }}
         style={{
           background: "none",
           border: "none",
           fontSize: isInsightsSidebarCollapsed ? "1.6em" : "1.2em",
-          cursor: "pointer",
+          cursor: isInsightsSidebarCollapsed ? "grab" : "pointer",
           padding: "0",
           color: isInsightsSidebarCollapsed ? "#fff" : "#2563eb",
           display: "flex",
@@ -2104,7 +2124,7 @@ ${paymentLines || "—"}
           transition: "all 0.2s",
           lineHeight: 1,
         }}
-        title={isInsightsSidebarCollapsed ? "Show insights" : "Hide insights"}
+        title={isInsightsSidebarCollapsed ? "Drag to move / Click to expand" : "Click to close"}
       >
         {isInsightsSidebarCollapsed ? "📊" : "✕"}
       </button>
@@ -2132,6 +2152,29 @@ ${paymentLines || "—"}
         </div>
       )}
     </div>
+  )}
+
+  {/* Handle dragging for insights sidebar */}
+  {demoId && isDraggingInsights && (
+    <div
+      onMouseMove={(e) => {
+        setInsightsPosition({
+          x: e.clientX - dragOffset.x,
+          y: e.clientY - dragOffset.y,
+        });
+      }}
+      onMouseUp={() => setIsDraggingInsights(false)}
+      onMouseLeave={() => setIsDraggingInsights(false)}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 49,
+        cursor: "grabbing",
+      }}
+    />
   )}
 
         {/* ========== STOCK TAKEN TO VILLAGE SECTION ========== */}
