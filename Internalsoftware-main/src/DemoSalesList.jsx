@@ -505,8 +505,20 @@ useEffect(() => {
 
   // helper to get scheme details
   const getOnePlusOneByKey = (key) => onePlusOneSchemes.find((s) => s.key === key) || null;
+  
+  // Helper to calculate total litres sold from customers
+  const calculateTotalLitres = () => {
+    return customers.reduce((total, customer) => {
+      const packaging = customer.orderPackaging;
+      const qty = parseInt(customer.orderQty) || 0;
+      const litresPerUnit = getLitresByName(packaging);
+      return total + (litresPerUnit * qty);
+    }, 0);
+  };
+  
   const [waCopied, setWACopied] = useState(false);
   const [demoId, setDemoId] = useState(null);
+  const [isInsightsSidebarCollapsed, setIsInsightsSidebarCollapsed] = useState(true);
   const [soldSummary, setSoldSummary] = useState({});
   const [remainingStockList, setRemainingStockList] = useState([]);
 
@@ -2050,6 +2062,77 @@ ${paymentLines || "—"}
 >
   Start Demo
   </button>
+
+  {/* ========== DEMO INSIGHTS SIDEBAR ========== */}
+  {demoId && (
+    <div
+      style={{
+        position: "fixed",
+        top: 120,
+        right: 20,
+        zIndex: 50,
+        background: isInsightsSidebarCollapsed ? "#2563eb" : "#ffffff",
+        border: isInsightsSidebarCollapsed ? "none" : "1px solid #e5e7eb",
+        borderRadius: isInsightsSidebarCollapsed ? "50%" : "8px",
+        padding: isInsightsSidebarCollapsed ? "6px" : "12px",
+        boxShadow: isInsightsSidebarCollapsed 
+          ? "0 4px 12px rgba(37, 99, 235, 0.25)" 
+          : "0 2px 8px rgba(0, 0, 0, 0.08)",
+        width: isInsightsSidebarCollapsed ? "44px" : "auto",
+        height: isInsightsSidebarCollapsed ? "44px" : "auto",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "all 0.25s ease",
+      }}
+    >
+      {/* Toggle Button */}
+      <button
+        type="button"
+        onClick={() => setIsInsightsSidebarCollapsed(!isInsightsSidebarCollapsed)}
+        style={{
+          background: "none",
+          border: "none",
+          fontSize: isInsightsSidebarCollapsed ? "1.4em" : "1.2em",
+          cursor: "pointer",
+          padding: "0",
+          color: isInsightsSidebarCollapsed ? "#fff" : "#2563eb",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "all 0.2s",
+          lineHeight: 1,
+        }}
+        title={isInsightsSidebarCollapsed ? "Show insights" : "Hide insights"}
+      >
+        {isInsightsSidebarCollapsed ? "📊" : "✕"}
+      </button>
+
+      {/* Expanded Content */}
+      {!isInsightsSidebarCollapsed && (
+        <div style={{ marginTop: 8, width: "100%" }}>
+          {/* Total Customers */}
+          <div style={{ textAlign: "center", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #f0f0f0" }}>
+            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>👥</div>
+            <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#2563eb" }}>{customers.length}</div>
+          </div>
+
+          {/* Total Liters */}
+          <div style={{ textAlign: "center", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #f0f0f0" }}>
+            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>🥛</div>
+            <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#10b981" }}>{calculateTotalLitres()}L</div>
+          </div>
+
+          {/* Demo Status */}
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "0.65em", color: "#6b7280", fontWeight: 600, marginBottom: 3, textTransform: "uppercase" }}>Status</div>
+            <div style={{ fontSize: "0.75em", fontWeight: 700, color: "#16a34a" }}>🟢 Live</div>
+          </div>
+        </div>
+      )}
+    </div>
+  )}
 
         {/* ========== STOCK TAKEN TO VILLAGE SECTION ========== */}
         <div
