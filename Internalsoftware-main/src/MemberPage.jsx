@@ -14,7 +14,7 @@ import {
   updateDoc
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { getPackagingNames, getPriceByName } from "./config/packagingConfig";
+import { getPackagingNames, getPriceByName, getLitresByName } from "./config/packagingConfig";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import Navbar from "./Navbar";
 import ExcelJS from "exceljs";
@@ -30,6 +30,8 @@ export default function MemberPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [photoCapture, setPhotoCapture] = useState("environment");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [isCustomersCollapsed, setIsCustomersCollapsed] = useState(false);
+  const [isFormCollapsed, setIsFormCollapsed] = useState(false);
   const [demoStockTaken, setDemoStockTaken] = useState([]);
   const [demoStockAtDairy, setDemoStockAtDairy] = useState([]);
   const [stockReturned, setStockReturned] = useState([]);
@@ -493,6 +495,19 @@ export default function MemberPage() {
     c.code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Calculate grand total litres for member page score card
+  const grandTotalLitres =
+    customers.reduce((acc, c) => {
+      const litres = getLitresByName(c.orderPackaging) || 0;
+      const qty = parseInt(c.orderQty) || 0;
+      return acc + litres * qty;
+    }, 0) +
+    demoStockAtDairy.reduce((acc, s) => {
+      const litres = getLitresByName(s.packaging) || 0;
+      const qty = parseInt(s.quantity) || 0;
+      return acc + litres * qty;
+    }, 0);
+
   return (
     <div style={{ padding: 20 }}>
       <Navbar />
@@ -509,6 +524,125 @@ export default function MemberPage() {
           label="Select Village"
           showLabel={true}
         />
+      )}
+
+      {/* MEMBER PAGE LIVE SCORE CARD */}
+      {selectedVillageid && (
+        <div
+          style={{
+            marginTop: 24,
+            marginBottom: 24,
+            textAlign: "center",
+            borderRadius: 14,
+            boxShadow: "0 8px 32px rgba(37, 99, 235, 0.3)",
+            background: "linear-gradient(135deg, #fff 0%, #f0f9ff 100%)",
+            padding: "24px 20px",
+            border: "3px solid #2563eb",
+            maxWidth: 900,
+            marginLeft: "auto",
+            marginRight: "auto",
+            animation: "slideDown 0.5s ease-out"
+          }}
+        >
+          <style>{`
+            @keyframes slideDown {
+              from {
+                opacity: 0;
+                transform: translateY(-20px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `}</style>
+          
+          {/* Title */}
+          <h3
+            style={{
+              margin: "0 0 20px 0",
+              color: "#2563eb",
+              fontWeight: 900,
+              fontSize: "1.4rem",
+              letterSpacing: "0.05em",
+            }}
+          >
+            🎯 LIVE SESSION SCORE
+          </h3>
+
+          {/* Score Cards Container */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 16,
+              padding: "0 12px"
+            }}
+          >
+            {/* Total Customers Card */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                padding: "20px 16px",
+                borderRadius: 12,
+                color: "#fff",
+                boxShadow: "0 4px 16px rgba(37, 99, 235, 0.25)",
+                border: "2px solid rgba(255,255,255,0.3)",
+              }}
+            >
+              <div style={{ fontSize: "0.9em", opacity: 0.95, marginBottom: 8 }}>
+                👥 CUSTOMERS
+              </div>
+              <div
+                style={{
+                  fontSize: "2.4rem",
+                  fontWeight: 900,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {customers.length}
+              </div>
+            </div>
+
+            {/* Total Litres Card */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                padding: "20px 16px",
+                borderRadius: 12,
+                color: "#fff",
+                boxShadow: "0 4px 16px rgba(16, 185, 129, 0.25)",
+                border: "2px solid rgba(255,255,255,0.3)",
+              }}
+            >
+              <div style={{ fontSize: "0.9em", opacity: 0.95, marginBottom: 8 }}>
+                📊 LITRES
+              </div>
+              <div
+                style={{
+                  fontSize: "2.4rem",
+                  fontWeight: 900,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {grandTotalLitres}
+              </div>
+            </div>
+          </div>
+
+          {/* Real-time status */}
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: "0.85em",
+              color: "#059669",
+              fontWeight: 600,
+              letterSpacing: "0.05em",
+            }}
+          >
+            🔴 LIVE — Updates in real-time
+          </div>
+        </div>
       )}
 
       {/* Excel Upload */}
@@ -637,9 +771,53 @@ export default function MemberPage() {
       </div>
 
       {/* Customer Form */}
-      <div style={{ marginBottom: 20, background: "#e3eefd", padding: 18, borderRadius: 8, border: "2px solid #2563eb" }}>
-        <h3 style={{ margin: "0 0 16px 0", color: "#174ea6", fontWeight: 700, fontSize: "1.3rem" }}>📝 {editingCustomerId ? "Edit Customer" : "Add Customer"}</h3>
+      <div style={{ marginBottom: 20, background: "#e3eefd", padding: 0, borderRadius: 8, border: "2px solid #2563eb", overflow: "hidden" }}>
+        {/* Collapsible Header */}
+        <div
+          onClick={() => setIsFormCollapsed(!isFormCollapsed)}
+          style={{
+            background: "linear-gradient(135deg, #2563eb 0%, #1e40af 100%)",
+            color: "#fff",
+            padding: "14px 18px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            cursor: "pointer",
+            userSelect: "none",
+            transition: "all 0.2s"
+          }}
+          onMouseOver={(e) => e.currentTarget.style.background = "linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)"}
+          onMouseOut={(e) => e.currentTarget.style.background = "linear-gradient(135deg, #2563eb 0%, #1e40af 100%)"}
+        >
+          <h3 style={{ margin: 0, fontWeight: 700, fontSize: "1.05rem", letterSpacing: "0.05em" }}>
+            📝 {editingCustomerId ? "Edit Customer" : "Add Customer"}
+          </h3>
+          <button
+            type="button"
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.4)",
+              padding: "4px 10px",
+              borderRadius: 6,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "0.8em",
+              transition: "all 0.2s"
+            }}
+            onMouseOver={(e) => {
+              e.target.style.background = "rgba(255,255,255,0.3)";
+            }}
+            onMouseOut={(e) => {
+              e.target.style.background = "rgba(255,255,255,0.2)";
+            }}
+          >
+            {isFormCollapsed ? "▶" : "▼"}
+          </button>
+        </div>
         
+        {!isFormCollapsed && (
+          <div style={{ padding: 18 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
           <div>
             <label style={{ fontSize: "0.85em", fontWeight: 600, color: "#0369a1", display: "block", marginBottom: 4 }}>Name *</label>
@@ -758,47 +936,154 @@ export default function MemberPage() {
             ✕ Cancel
           </button>
         )}
+          </div>
+        )}
       </div>
 
       {/* Customers Table - Responsive */}
       {customers.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <h3 style={{ color: "#174ea6", fontWeight: 700, margin: 0 }}>👥 Added Customers ({filteredCustomersByMember.length})</h3>
-            
-            {/* Filter Dropdown */}
-            <select
-              value={filterByMember}
-              onChange={(e) => setFilterByMember(e.target.value)}
+        <div style={{ marginTop: 24, background: "#fff", borderRadius: 14, boxShadow: "0 4px 24px rgba(37, 99, 235, 0.15)", border: "2px solid #e0e7ff", overflow: "hidden" }}>
+          {/* Collapsible Header */}
+          <div
+            onClick={() => setIsCustomersCollapsed(!isCustomersCollapsed)}
+            style={{
+              background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+              color: "#fff",
+              padding: "14px 18px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              cursor: "pointer",
+              userSelect: "none",
+              transition: "all 0.2s"
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = "linear-gradient(135deg, #0369a1 0%, #0166a8 100%)"}
+            onMouseOut={(e) => e.currentTarget.style.background = "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)"}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.15em", letterSpacing: "0.05em" }}>
+                👥 CUSTOMERS
+              </h3>
+              <div style={{ background: "rgba(255,255,255,0.2)", padding: "4px 12px", borderRadius: 8, fontSize: "0.9em", fontWeight: 700 }}>
+                <span style={{ fontSize: "1.1em" }}>{filteredCustomersByMember.length}</span>
+              </div>
+            </div>
+            <button
+              type="button"
               style={{
-                padding: "10px 14px",
+                background: "rgba(255,255,255,0.2)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.4)",
+                padding: "4px 10px",
                 borderRadius: 6,
-                border: "1.5px solid #d1d5db",
-                background: "#fff",
-                fontSize: "0.95em",
                 fontWeight: 600,
-                color: "#1f2937",
                 cursor: "pointer",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                transition: "border-color 0.2s"
+                fontSize: "0.8em",
+                transition: "all 0.2s"
               }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "#2563eb";
-                e.target.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.1)";
+              onMouseOver={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.3)";
               }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "#d1d5db";
-                e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+              onMouseOut={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.2)";
               }}
             >
-              <option value="all">🔷 All Members</option>
-              {uniqueMembers.map((member) => (
-                <option key={member.email} value={member.email}>
-                  {member.email === currentUserEmail ? `👤 ${member.name} (You)` : `👤 ${member.name}`}
-                </option>
-              ))}
-            </select>
+              {isCustomersCollapsed ? "▶" : "▼"}
+            </button>
           </div>
+
+          {!isCustomersCollapsed && (
+            <div style={{ padding: "16px 18px" }}>
+              {/* Search and Filter */}
+              <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600, fontSize: "0.9em", color: "#374151" }}>Search Customer:</label>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#2563eb", fontSize: "1.2em" }}>🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Search by name, mobile, or code..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px 10px 40px",
+                        border: "1.5px solid #d1d5db",
+                        borderRadius: 6,
+                        fontSize: "0.95em",
+                        transition: "all 0.2s",
+                        boxShadow: searchTerm ? "0 2px 8px rgba(37, 99, 235, 0.15)" : "none",
+                        borderColor: searchTerm ? "#2563eb" : "#d1d5db"
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#2563eb";
+                        e.target.style.boxShadow = "0 2px 8px rgba(37, 99, 235, 0.15)";
+                      }}
+                      onBlur={(e) => {
+                        if (!searchTerm) {
+                          e.target.style.borderColor = "#d1d5db";
+                          e.target.style.boxShadow = "none";
+                        }
+                      }}
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm("")}
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          background: "none",
+                          border: "none",
+                          fontSize: "1.1em",
+                          cursor: "pointer",
+                          color: "#9ca3af",
+                          padding: "4px 8px",
+                          transition: "color 0.2s"
+                        }}
+                        onMouseOver={(e) => e.target.style.color = "#2563eb"}
+                        onMouseOut={(e) => e.target.style.color = "#9ca3af"}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filter Dropdown */}
+                <select
+                  value={filterByMember}
+                  onChange={(e) => setFilterByMember(e.target.value)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 6,
+                    border: "1.5px solid #d1d5db",
+                    background: "#fff",
+                    fontSize: "0.95em",
+                    fontWeight: 600,
+                    color: "#1f2937",
+                    cursor: "pointer",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                    transition: "border-color 0.2s"
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#2563eb";
+                    e.target.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "#d1d5db";
+                    e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+                  }}
+                >
+                  <option value="all">🔷 All Members</option>
+                  {uniqueMembers.map((member) => (
+                    <option key={member.email} value={member.email}>
+                      {member.email === currentUserEmail ? `👤 ${member.name} (You)` : `👤 ${member.name}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
           
           {/* Card View */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
@@ -906,7 +1191,9 @@ export default function MemberPage() {
                 )}
               </div>
             ))}
-          </div>
+            </div>
+            </div>
+          )}
         </div>
       )}
 

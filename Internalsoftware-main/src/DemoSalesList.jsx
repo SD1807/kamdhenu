@@ -1715,8 +1715,20 @@ const handleSelectExcelCustomer = (customer) => {
   useEffect(() => {
     const { sold, dairy, remainingList } = calculateSoldAndRemaining();
     setSoldSummary(sold);
-    setRemainingStockList(remainingList);
-  }, [customers, stockTaken, stockAtDairy, stockReturned]);
+    setRemainingStockList(remainingList);  }, [customers, stockTaken, stockAtDairy, stockReturned]);
+
+  // Calculate grand total litres for live score card
+  const grandTotalLitres =
+    customers.reduce((acc, c) => {
+      const litres = getLitresByName(c.orderPackaging) || 0;
+      const qty = parseInt(c.orderQty) || 0;
+      return acc + litres * qty;
+    }, 0) +
+    stockAtDairy.reduce((acc, s) => {
+      const litres = getLitresByName(s.packaging) || 0;
+      const qty = parseInt(s.quantity) || 0;
+      return acc + litres * qty;
+    }, 0);
 
   // WhatsApp summary
   const handleGenerateSummary = () => {
@@ -1769,19 +1781,6 @@ const handleSelectExcelCustomer = (customer) => {
 
   // Total payment collected
   const totalPayment = paymentsCollected.reduce((acc, p) => acc + parseFloat(p.amount), 0);
-
-  // Grand total litres = customer sales + dairy stock
-  const grandTotalLitres =
-    customers.reduce((acc, c) => {
-      const litres = getLitresByName(c.orderPackaging) || 0;
-      const qty = parseInt(c.orderQty) || 0;
-      return acc + litres * qty;
-    }, 0) +
-    stockAtDairy.reduce((acc, s) => {
-      const litres = getLitresByName(s.packaging) || 0;
-      const qty = parseInt(s.quantity) || 0;
-      return acc + litres * qty;
-    }, 0);
 
   // Final formatted WA summary
   const summaryText = 
@@ -1908,6 +1907,7 @@ ${paymentLines || "—"}
               villageOptions={villageOptions}
               selectedVillageId={selectedVillageId}
               onVillageChange={(id) => {
+                
                 setSelectedVillageId(id);
                 const found = villageOptions.find(v => v.id === id);
                 const villageName = found ? found.name : "";
@@ -2051,6 +2051,125 @@ ${paymentLines || "—"}
 >
   Start Demo
   </button>
+
+        {/* ========== DEMO LIVE SCORE CARD ========== */}
+        {demoId && (
+          <div
+            style={{
+              marginTop: 24,
+              marginBottom: 24,
+              textAlign: "center",
+              borderRadius: 14,
+              boxShadow: "0 8px 32px rgba(37, 99, 235, 0.3)",
+              background: "linear-gradient(135deg, #fff 0%, #f0f9ff 100%)",
+              padding: "24px 20px",
+              border: "3px solid #2563eb",
+              maxWidth: 900,
+              marginLeft: "auto",
+              marginRight: "auto",
+              animation: "slideDown 0.5s ease-out"
+            }}
+          >
+            <style>{`
+              @keyframes slideDown {
+                from {
+                  opacity: 0;
+                  transform: translateY(-20px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
+            
+            {/* Title */}
+            <h3
+              style={{
+                margin: "0 0 20px 0",
+                color: "#2563eb",
+                fontWeight: 900,
+                fontSize: "1.4rem",
+                letterSpacing: "0.05em",
+              }}
+            >
+              🎯 LIVE DEMO SCORE
+            </h3>
+
+            {/* Score Cards Container */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 16,
+                padding: "0 12px"
+              }}
+            >
+              {/* Total Customers Card */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                  padding: "20px 16px",
+                  borderRadius: 12,
+                  color: "#fff",
+                  boxShadow: "0 4px 16px rgba(37, 99, 235, 0.25)",
+                  border: "2px solid rgba(255,255,255,0.3)",
+                }}
+              >
+                <div style={{ fontSize: "0.9em", opacity: 0.95, marginBottom: 8 }}>
+                  👥 CUSTOMERS
+                </div>
+                <div
+                  style={{
+                    fontSize: "2.4rem",
+                    fontWeight: 900,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {customers.length}
+                </div>
+              </div>
+
+              {/* Total Litres Card */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  padding: "20px 16px",
+                  borderRadius: 12,
+                  color: "#fff",
+                  boxShadow: "0 4px 16px rgba(16, 185, 129, 0.25)",
+                  border: "2px solid rgba(255,255,255,0.3)",
+                }}
+              >
+                <div style={{ fontSize: "0.9em", opacity: 0.95, marginBottom: 8 }}>
+                  📊 LITRES
+                </div>
+                <div
+                  style={{
+                    fontSize: "2.4rem",
+                    fontWeight: 900,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {grandTotalLitres}
+                </div>
+              </div>
+            </div>
+
+            {/* Real-time status */}
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: "0.85em",
+                color: "#059669",
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+              }}
+            >
+              🔴 LIVE — Updates in real-time
+            </div>
+          </div>
+        )}
 
         {/* ========== STOCK TAKEN TO VILLAGE SECTION ========== */}
         <div
